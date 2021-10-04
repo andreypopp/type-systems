@@ -1,0 +1,8 @@
+(library
+ (name mu)
+ (libraries base pprint nice_parser)
+ )
+
+(ocamllex lexer)
+
+(menhir (modules parser))
