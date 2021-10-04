@@ -29,9 +29,12 @@ let nextid () =
   Int.incr currentid;
   !currentid
 
-let newvar () = Expr.Ty_var { contents = Ty_var_unbound (nextid ()) }
+let newvar lvl () =
+  Expr.Ty_var { contents = Ty_var_unbound { id = nextid (); lvl } }
 
-let instantiate (ty : Expr.ty) =
+let newgenvar () = Expr.Ty_var { contents = Ty_var_generic (nextid ()) }
+
+let instantiate lvl (ty : Expr.ty) =
   let vars = Hashtbl.create (module Int) in
   let rec aux ty =
     match ty with
@@ -41,36 +44,37 @@ let instantiate (ty : Expr.ty) =
     | Ty_var { contents = Ty_var_link ty } -> aux ty
     | Ty_var { contents = Ty_var_unbound _ } -> ty
     | Ty_var { contents = Ty_var_generic id } ->
-      Hashtbl.find_or_add vars id ~default:newvar
+      Hashtbl.find_or_add vars id ~default:(newvar lvl)
   in
   aux ty
 
-let rec generalize (ty : Expr.ty) =
+let rec generalize lvl (ty : Expr.ty) =
   match ty with
   | Ty_const _ -> ty
   | Ty_arr (ty_args, ty_ret) ->
-    Ty_arr (List.map ty_args ~f:generalize, generalize ty_ret)
+    Ty_arr (List.map ty_args ~f:(generalize lvl), generalize lvl ty_ret)
   | Ty_app (ty, ty_args) ->
-    Ty_app (generalize ty, List.map ty_args ~f:generalize)
-  | Ty_var { contents = Ty_var_link ty } -> generalize ty
+    Ty_app (generalize lvl ty, List.map ty_args ~f:(generalize lvl))
+  | Ty_var { contents = Ty_var_link ty } -> generalize lvl ty
   | Ty_var { contents = Ty_var_generic _ } -> ty
-  | Ty_var { contents = Ty_var_unbound id } ->
-    (* TODO: this is unsound as we generalizing all unbound vars! *)
-    Ty_var { contents = Ty_var_generic id }
+  | Ty_var { contents = Ty_var_unbound { id; lvl = var_lvl } } ->
+    if var_lvl > lvl then Ty_var { contents = Ty_var_generic id } else ty
 
-let rec occurs_check v ty =
+let rec occurs_check lvl id ty =
   match ty with
   | Expr.Ty_const _ -> ()
   | Ty_arr (args, ret) ->
-    List.iter args ~f:(occurs_check v);
-    occurs_check v ret
+    List.iter args ~f:(occurs_check lvl id);
+    occurs_check lvl id ret
   | Ty_app (f, args) ->
-    occurs_check v f;
-    List.iter args ~f:(occurs_check v)
-  | Ty_var { contents = Ty_var_link ty } -> occurs_check v ty
-  | Ty_var { contents = Ty_var_unbound id } ->
-    if id = v then type_error "recursive types"
+    occurs_check lvl id f;
+    List.iter args ~f:(occurs_check lvl id)
+  | Ty_var { contents = Ty_var_link ty } -> occurs_check lvl id ty
   | Ty_var { contents = Ty_var_generic _ } -> ()
+  | Ty_var ({ contents = Ty_var_unbound v } as var) ->
+    if v.id = id then type_error "recursive types"
+    else if v.lvl < lvl then var := Ty_var_unbound { id = v.id; lvl }
+    else ()
 
 let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
   if phys_equal ty1 ty2 then ()
@@ -87,9 +91,9 @@ let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
     | Ty_var { contents = Ty_var_link ty1 }, ty2
     | ty1, Ty_var { contents = Ty_var_link ty2 } ->
       unify ty1 ty2
-    | Ty_var ({ contents = Ty_var_unbound id } as var), ty
-    | ty, Ty_var ({ contents = Ty_var_unbound id } as var) ->
-      occurs_check id ty;
+    | Ty_var ({ contents = Ty_var_unbound { id; lvl } } as var), ty
+    | ty, Ty_var ({ contents = Ty_var_unbound { id; lvl } } as var) ->
+      occurs_check lvl id ty;
       var := Ty_var_link ty
     | ty1, ty2 ->
       type_error_doc
@@ -99,17 +103,17 @@ let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
           ^^ (break 1 ^^ string "with")
           ^^ nest 2 (break 1 ^^ Expr.doc_of_ty ty2))
 
-let rec unify_abs arity ty =
+let rec unify_abs lvl arity ty =
   match ty with
   | Expr.Ty_arr (ty_args, ty_ret) ->
     if List.length ty_args <> arity then type_error "arity mismatch";
     (ty_args, ty_ret)
   | Ty_var var -> (
     match !var with
-    | Ty_var_link ty -> unify_abs arity ty
+    | Ty_var_link ty -> unify_abs lvl arity ty
     | Ty_var_unbound _ ->
-      let ty_ret = newvar () in
-      let ty_args = List.init arity ~f:(fun _ -> newvar ()) in
+      let ty_ret = newvar lvl () in
+      let ty_args = List.init arity ~f:(fun _ -> newvar lvl ()) in
       (* TODO: do we need an occurs check here? probably not *)
       var := Ty_var_link (Ty_arr (ty_args, ty_ret));
       (ty_args, ty_ret)
@@ -118,7 +122,7 @@ let rec unify_abs arity ty =
   | Ty_const _ ->
     type_error "expected a function"
 
-let rec infer' env (e : Expr.expr) =
+let rec infer' lvl env (e : Expr.expr) =
   match e with
   | Expr_name name ->
     let ty =
@@ -126,34 +130,34 @@ let rec infer' env (e : Expr.expr) =
       | Some ty -> ty
       | None -> type_errorf "unknown name `%s`" name
     in
-    instantiate ty
+    instantiate lvl ty
   | Expr_abs (args, body) ->
-    let ty_args = List.map args ~f:(fun _ -> newvar ()) in
+    let ty_args = List.map args ~f:(fun _ -> newvar lvl ()) in
     let ty_body =
       let env =
         List.fold_left (List.zip_exn args ty_args) ~init:env
           ~f:(fun env (arg, ty_arg) -> Map.set env ~key:arg ~data:ty_arg)
       in
-      infer' env body
+      infer' lvl env body
     in
     Expr.Ty_arr (ty_args, ty_body)
   | Expr_app (func, args) ->
     let ty_args, ty_ret =
-      let ty_func = infer' env func in
-      unify_abs (List.length args) ty_func
+      let ty_func = infer' lvl env func in
+      unify_abs lvl (List.length args) ty_func
     in
     let () =
       List.iter2_exn args ty_args ~f:(fun arg ty_arg ->
-          let ty = infer' env arg in
+          let ty = infer' lvl env arg in
           unify ty ty_arg)
     in
     ty_ret
   | Expr_let (name, e, b) ->
-    let ty_e = infer' env e in
-    let ty_e = generalize ty_e in
+    let ty_e = infer' (lvl + 1) env e in
+    let ty_e = generalize lvl ty_e in
     let env = Map.set env ~key:name ~data:ty_e in
-    infer' env b
+    infer' lvl env b
   | Expr_lit (Lit_string _) -> Expr.Ty_const "string"
   | Expr_lit (Lit_int _) -> Expr.Ty_const "int"
 
-let infer env e = generalize (infer' env e)
+let infer env e = generalize 0 (infer' 1 env e)

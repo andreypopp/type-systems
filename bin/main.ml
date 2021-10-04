@@ -1,6 +1,6 @@
 open Base
 
-let test_run code =
+let expect_type code ty =
   Mu.Infer.resetid ();
   let prog = Mu.parse_expr code in
   Caml.Format.printf "=== CODE ===@.%s@." (Mu.Expr.show_expr prog);
@@ -12,26 +12,27 @@ let test_run code =
       |> assume "print" "string -> string"
     in
     try
-      let ty = Mu.Infer.infer env prog in
-      Caml.Format.printf ": %s@." (Mu.Expr.show_ty ty)
+      let inferred_ty = Mu.Infer.infer env prog in
+      Caml.Format.printf ": %s@." (Mu.Expr.show_ty inferred_ty);
+      if not String.(Mu.Expr.show_ty inferred_ty = ty) then (
+        Caml.print_endline ("ERROR: " ^ Mu.Expr.show_ty inferred_ty);
+        Caml.exit 1)
     with
     | Mu.Infer.Type_error msg -> Caml.print_endline msg
   in
   ()
 
 let () =
-  test_run "world";
-  test_run "print";
-  test_run "let x = world in x";
-  test_run "fun () -> world";
-  test_run "let x = fun () -> world in world";
-  test_run "let x = fun () -> world in x";
-  test_run "print(world)";
-  test_run "let hello = fun msg -> print(msg) in hello(world)";
-  test_run "fun x -> let y = fun z -> z in y";
-
-  (* XXX: UNSOUND NOW DUE TO GENERALIZATION *)
-  test_run "fun x -> let y = x in y";
-
-  (* XXX: UNSOUND NOW DUE TO GENERALIZATION *)
-  test_run "fun x -> let y = fun z -> x in y"
+  expect_type "world" "string";
+  expect_type "print" "string -> string";
+  expect_type "let x = world in x" "string";
+  expect_type "fun () -> world" "() -> string";
+  expect_type "let x = fun () -> world in world" "string";
+  expect_type "let x = fun () -> world in x" "() -> string";
+  expect_type "print(world)" "string";
+  expect_type "let hello = fun msg -> print(msg) in hello(world)" "string";
+  expect_type "fun x -> let y = fun z -> z in y" "b -> a -> a";
+  expect_type "fun x -> let y = x in y" "a -> a";
+  expect_type "fun x -> let y = fun z -> x in y" "a -> b -> a";
+  expect_type "fun x -> print(world)" "a -> string";
+  ()

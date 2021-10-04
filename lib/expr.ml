@@ -18,7 +18,9 @@ type ty =
   | Ty_arr of ty list * ty
 
 and ty_var =
-  Ty_var_unbound of id | Ty_var_link of ty | Ty_var_generic of id
+  | Ty_var_unbound of { id : id; lvl : int }
+  | Ty_var_link of ty
+  | Ty_var_generic of id
 
 and id = int
 
@@ -69,7 +71,8 @@ let doc_of_ty ty =
       aux f ^^ parens (separate comma (List.map args ~f:aux))
     | Ty_var { contents = Ty_var_link ty } -> aux ty
     | Ty_var { contents = Ty_var_generic id } -> string (lookup_name id)
-    | Ty_var { contents = Ty_var_unbound id } -> string ("_" ^ Int.to_string id)
+    | Ty_var { contents = Ty_var_unbound { id; lvl = _ } } ->
+      string ("_" ^ Int.to_string id)
   in
   aux ty
 

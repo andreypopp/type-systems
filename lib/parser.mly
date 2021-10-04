@@ -7,7 +7,7 @@ let build_ty var_name_list ty =
 	let env = List.fold_left
 	  var_name_list
 	  ~init:(Map.empty (module String))
-		~f:(fun env var_name -> Map.set env ~key:var_name ~data:(Infer.newvar ()))
+		~f:(fun env var_name -> Map.set env ~key:var_name ~data:(Infer.newgenvar ()))
 	in
 	let rec aux ty = match ty with
 		| Ty_const name -> (
