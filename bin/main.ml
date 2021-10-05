@@ -10,6 +10,10 @@ let expect_type code ty =
       Map.empty (module String)
       |> assume "world" "string"
       |> assume "print" "string -> string"
+      |> assume "nil" "forall[a] list[a]"
+      |> assume "cons" "forall[a] (a, list[a]) -> list[a]"
+      |> assume "head" "forall[a] list[a] -> a"
+      |> assume "tail" "forall[a] list[a] -> list[a]"
     in
     try
       let inferred_ty = Mu.Infer.infer env prog in
@@ -34,5 +38,8 @@ let () =
   expect_type "fun x -> let y = fun z -> z in y" "b -> a -> a";
   expect_type "fun x -> let y = x in y" "a -> a";
   expect_type "fun x -> let y = fun z -> x in y" "a -> b -> a";
-  expect_type "fun x -> print(world)" "a -> string";
+  expect_type "let rec fact = fun n -> fact(print(n)) in fact(world)" "a";
+  expect_type
+    "let rec map = fun (f, xs) -> cons(f(head(xs)), map(f, tail(xs))) in map"
+    "(b -> a,list(b)) -> list(a)";
   ()

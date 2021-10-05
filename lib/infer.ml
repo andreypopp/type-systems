@@ -157,6 +157,14 @@ let rec infer' lvl env (e : Expr.expr) =
     let ty_e = generalize lvl ty_e in
     let env = Map.set env ~key:name ~data:ty_e in
     infer' lvl env b
+  | Expr_let_rec (name, e, b) ->
+    let ty_e =
+      let env = Map.set env ~key:name ~data:(newvar lvl ()) in
+      infer' (lvl + 1) env e
+    in
+    let ty_e = generalize lvl ty_e in
+    let env = Map.set env ~key:name ~data:ty_e in
+    infer' lvl env b
   | Expr_lit (Lit_string _) -> Expr.Ty_const "string"
   | Expr_lit (Lit_int _) -> Expr.Ty_const "int"
 

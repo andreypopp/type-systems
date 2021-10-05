@@ -23,7 +23,7 @@ let build_ty var_name_list ty =
 %}
 
 %token <string> IDENT
-%token FUN LET IN FORALL
+%token FUN LET REC IN FORALL
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token ARROW EQUALS COMMA
 %token EOF
@@ -49,6 +49,7 @@ ty_forall_eof:
 expr:
 	| e = simple_expr                                       { e }
 	| LET n = IDENT EQUALS e = expr IN b = expr             { Expr_let (n, e, b) }
+	| LET REC n = IDENT EQUALS e = expr IN b = expr         { Expr_let_rec (n, e, b) }
   | FUN LPAREN RPAREN ARROW body = expr                   { Expr_abs ([], body) }
   | FUN arg = IDENT ARROW body = expr                     { Expr_abs ([arg], body) }
 	| FUN LPAREN args = param_list RPAREN ARROW body = expr { Expr_abs (args, body) }

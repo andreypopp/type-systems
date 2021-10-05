@@ -14,6 +14,7 @@ rule token = parse
 	| [' ' '\t' '\r' '\n']  { token lexbuf }
 	| "fun"                 { FUN }
 	| "let"                 { LET }
+	| "rec"                 { REC }
 	| "in"                  { IN }
 	| "forall"              { FORALL }
 	| ident                 { IDENT (Lexing.lexeme lexbuf) }
@@ -33,6 +34,7 @@ rule token = parse
 let string_of_token = function
 	| FUN -> "fun"
 	| LET -> "let"
+	| REC -> "rec"
 	| IN -> "in"
 	| FORALL -> "forall"
 	| IDENT ident -> ident

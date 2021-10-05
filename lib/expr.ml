@@ -6,6 +6,7 @@ type expr =
   | Expr_app of expr * expr list
   | Expr_lit of lit
   | Expr_let of name * expr * expr
+  | Expr_let_rec of name * expr * expr
 
 and lit = Lit_string of string | Lit_int of int
 
@@ -42,6 +43,11 @@ let rec doc_of_expr =
   | Expr_let (n, e, b) ->
     surround 2 1
       (string "let " ^^ string n ^^ string " =")
+      (doc_of_expr e)
+      (string "in " ^^ doc_of_expr b)
+  | Expr_let_rec (n, e, b) ->
+    surround 2 1
+      (string "let rec " ^^ string n ^^ string " =")
       (doc_of_expr e)
       (string "in " ^^ doc_of_expr b)
 

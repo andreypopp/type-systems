@@ -21,7 +21,7 @@ module Ty_parser = Nice_parser.Make (struct
 
   type result = Expr.ty
 
-  let parse = Parser.ty_eof
+  let parse = Parser.ty_forall_eof
 
   let next_token = Lexer.token
 
