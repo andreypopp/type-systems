@@ -44,11 +44,21 @@ let nextid () =
   Int.incr currentid;
   !currentid
 
-let newvar lvl () =
-  Expr.Ty_var { contents = Ty_var_unbound { id = nextid (); lvl } }
+let newvar ?id lvl () =
+  let id =
+    match id with
+    | Some id -> id
+    | None -> nextid ()
+  in
+  Expr.Ty_var { contents = Ty_var_unbound { id; lvl } }
 
-let newrowvar lvl () =
-  Expr.Ty_row_var { contents = Ty_var_unbound { id = nextid (); lvl } }
+let newrowvar ?id lvl () =
+  let id =
+    match id with
+    | Some id -> id
+    | None -> nextid ()
+  in
+  Expr.Ty_row_var { contents = Ty_var_unbound { id; lvl } }
 
 let newgenvar () = Expr.Ty_var { contents = Ty_var_generic (nextid ()) }
 
@@ -161,50 +171,53 @@ let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
     | ty1, ty2 -> type_error (Error_unification (ty1, ty2))
 
 and unify_row row1 row2 =
-  match (row1, row2) with
-  | Ty_row_empty, Ty_row_empty -> ()
-  | Ty_row_field (name, ty, row1), Ty_row_field _ ->
-    let exception Row_rewrite_error in
-    let rec rewrite = function
-      | Expr.Ty_row_empty -> raise Row_rewrite_error
-      | Ty_row_field (name', ty', row') ->
-        if String.(name = name') then (
-          unify ty ty';
-          row')
-        else Ty_row_field (name', ty', rewrite row')
-      | Ty_row_var { contents = Ty_var_link row' } -> rewrite row'
-      | Ty_row_var ({ contents = Ty_var_unbound { id = _; lvl } } as var) ->
-        let row' = newrowvar lvl () in
-        var := Ty_var_link (Ty_row_field (name, ty, row'));
-        row'
-      | Ty_row_var { contents = Ty_var_generic _ } ->
-        failwith "non instantiated row variable"
-    in
-    let row1_unbound =
-      match row1 with
-      | Ty_row_var ({ contents = Ty_var_unbound _ } as var) -> Some var
-      | _ -> None
-    in
-    let row2 =
-      try rewrite row2 with
-      | Row_rewrite_error ->
-        type_error (Error_unification (Ty_record row1, Ty_record row2))
-    in
-    (match row1_unbound with
-    | Some { contents = Ty_var_link _ } -> type_error Error_recursive_row_types
-    | _ -> ());
-    unify_row row1 row2
-  | Ty_row_var { contents = Ty_var_link row1 }, row2
-  | row2, Ty_row_var { contents = Ty_var_link row1 } ->
-    unify_row row1 row2
-  | Ty_row_var ({ contents = Ty_var_unbound { id; lvl } } as var), row
-  | row, Ty_row_var ({ contents = Ty_var_unbound { id; lvl } } as var) ->
-    occurs_check lvl id (Ty_record row);
-    var := Ty_var_link row
-  | row1, row2 ->
-    type_error (Error_unification (Ty_record row1, Ty_record row2))
+  if phys_equal row1 row2 then ()
+  else
+    match (row1, row2) with
+    | Ty_row_empty, Ty_row_empty -> ()
+    | Ty_row_field (name, ty, row1), Ty_row_field _ ->
+      let exception Row_rewrite_error in
+      let rec rewrite = function
+        | Expr.Ty_row_empty -> raise Row_rewrite_error
+        | Ty_row_field (name', ty', row') ->
+          if String.(name = name') then (
+            unify ty ty';
+            row')
+          else Ty_row_field (name', ty', rewrite row')
+        | Ty_row_var { contents = Ty_var_link row' } -> rewrite row'
+        | Ty_row_var ({ contents = Ty_var_unbound { id = _; lvl } } as var) ->
+          let row' = newrowvar lvl () in
+          var := Ty_var_link (Ty_row_field (name, ty, row'));
+          row'
+        | Ty_row_var { contents = Ty_var_generic _ } ->
+          failwith "non instantiated row variable"
+      in
+      let row1_unbound =
+        match row1 with
+        | Ty_row_var ({ contents = Ty_var_unbound _ } as var) -> Some var
+        | _ -> None
+      in
+      let row2 =
+        try rewrite row2 with
+        | Row_rewrite_error ->
+          type_error (Error_unification (Ty_record row1, Ty_record row2))
+      in
+      (match row1_unbound with
+      | Some { contents = Ty_var_link _ } ->
+        type_error Error_recursive_row_types
+      | _ -> ());
+      unify_row row1 row2
+    | Ty_row_var { contents = Ty_var_link row1 }, row2
+    | row2, Ty_row_var { contents = Ty_var_link row1 } ->
+      unify_row row1 row2
+    | Ty_row_var ({ contents = Ty_var_unbound { id; lvl } } as var), row
+    | row, Ty_row_var ({ contents = Ty_var_unbound { id; lvl } } as var) ->
+      occurs_check lvl id (Ty_record row);
+      var := Ty_var_link row
+    | row1, row2 ->
+      type_error (Error_unification (Ty_record row1, Ty_record row2))
 
-let rec unify_abs lvl arity ty =
+let rec unify_abs arity ty =
   match ty with
   | Expr.Ty_arr (ty_args, ty_ret) ->
     if List.length ty_args <> arity then
@@ -212,11 +225,10 @@ let rec unify_abs lvl arity ty =
     (ty_args, ty_ret)
   | Ty_var var -> (
     match !var with
-    | Ty_var_link ty -> unify_abs lvl arity ty
-    | Ty_var_unbound _ ->
-      let ty_ret = newvar lvl () in
-      let ty_args = List.init arity ~f:(fun _ -> newvar lvl ()) in
-      (* TODO: do we need an occurs check here? probably not *)
+    | Ty_var_link ty -> unify_abs arity ty
+    | Ty_var_unbound v ->
+      let ty_ret = newvar v.lvl () in
+      let ty_args = List.init arity ~f:(fun _ -> newvar v.lvl ()) in
       var := Ty_var_link (Ty_arr (ty_args, ty_ret));
       (ty_args, ty_ret)
     | Ty_var_generic _ -> failwith "uninstantiated generic type")
@@ -247,7 +259,7 @@ let rec infer' lvl env (e : Expr.expr) =
   | Expr_app (func, args) ->
     let ty_args, ty_ret =
       let ty_func = infer' lvl env func in
-      unify_abs lvl (List.length args) ty_func
+      unify_abs (List.length args) ty_func
     in
     let () =
       List.iter2_exn args ty_args ~f:(fun arg ty_arg ->
@@ -312,4 +324,4 @@ let rec infer' lvl env (e : Expr.expr) =
   | Expr_lit (Lit_string _) -> Expr.Ty_const "string"
   | Expr_lit (Lit_int _) -> Expr.Ty_const "int"
 
-let infer env e = generalize 0 (infer' 1 env e)
+let infer env e = generalize (-1) (infer' 0 env e)

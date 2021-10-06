@@ -117,6 +117,8 @@ let doc_of_ty ty =
     let open PPrint in
     function
     | Ty_const name -> string name
+    | Ty_arr ([ (Ty_arr _ as arg) ], ret) ->
+      parens (doc_of_ty arg) ^^ string " -> " ^^ doc_of_ty ret
     | Ty_arr ([ arg ], ret) -> doc_of_ty arg ^^ string " -> " ^^ doc_of_ty ret
     | Ty_arr (args, ret) ->
       let sep = comma ^^ blank 1 in
