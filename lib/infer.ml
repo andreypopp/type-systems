@@ -2,32 +2,39 @@ open! Base
 
 type env = (String.t, Expr.ty, String.comparator_witness) Map.t
 
-exception Type_error of string
+type error =
+  | Error_unification of Expr.ty * Expr.ty
+  | Error_recursive_types
+  | Error_recursive_row_types
+  | Error_not_a_function
+  | Error_unknown_name of string
+  | Error_arity_mismatch of int * int
 
-let type_error msg = raise (Type_error msg)
-
-let type_errorf fmt =
-  let kerr _ =
-    let msg = Caml.Format.flush_str_formatter () in
-    raise (Type_error msg)
-  in
-  Caml.Format.kfprintf kerr Caml.Format.str_formatter fmt
-
-let type_error_doc doc =
-  let msg =
-    let buf = Buffer.create 100 in
-    PPrint.ToBuffer.pretty 1. 80 buf doc;
-    Buffer.contents buf
-  in
-  raise (Type_error msg)
-
-let type_unification_error ty1 ty2 =
-  type_error_doc
-    PPrint.(
+let doc_of_error =
+  PPrint.(
+    function
+    | Error_recursive_types -> string "recursive types"
+    | Error_recursive_row_types -> string "recursive row types"
+    | Error_not_a_function -> string "expected a function"
+    | Error_unknown_name name -> string "unknown name: " ^^ string name
+    | Error_arity_mismatch (expected, got) ->
+      string "arity mismatch: expected"
+      ^^ string (Int.to_string expected)
+      ^^ string " but got "
+      ^^ string (Int.to_string got)
+    | Error_unification (ty1, ty2) ->
       string "unification error of"
       ^^ nest 2 (break 1 ^^ Expr.doc_of_ty ty1)
       ^^ (break 1 ^^ string "with")
       ^^ nest 2 (break 1 ^^ Expr.doc_of_ty ty2))
+
+let pp_error = Expr.pp' doc_of_error
+
+let show_error = Expr.show' doc_of_error
+
+exception Type_error of error
+
+let type_error err = raise (Type_error err)
 
 let currentid = ref 0
 
@@ -111,7 +118,7 @@ let occurs_check lvl id ty =
     | Ty_var { contents = Ty_var_link ty } -> occurs_check_ty ty
     | Ty_var { contents = Ty_var_generic _ } -> ()
     | Ty_var ({ contents = Ty_var_unbound v } as var) ->
-      if v.id = id then type_error "recursive types"
+      if v.id = id then type_error Error_recursive_types
       else if lvl < v.lvl then var := Ty_var_unbound { id = v.id; lvl }
       else ()
     | Ty_record ty_row -> occurs_check_ty_row ty_row
@@ -124,7 +131,7 @@ let occurs_check lvl id ty =
     | Ty_row_var { contents = Ty_var_link ty_row } -> occurs_check_ty_row ty_row
     | Ty_row_var { contents = Ty_var_generic _ } -> ()
     | Ty_row_var ({ contents = Ty_var_unbound v } as var) ->
-      if v.id = id then type_error "recursive types"
+      if v.id = id then type_error Error_recursive_types
       else if lvl < v.lvl then var := Ty_var_unbound { id = v.id; lvl }
       else ()
   in
@@ -135,7 +142,8 @@ let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
   else
     match (ty1, ty2) with
     | Ty_const name1, Ty_const name2 ->
-      if not String.(name1 = name2) then type_unification_error ty1 ty2
+      if not String.(name1 = name2) then
+        type_error (Error_unification (ty1, ty2))
     | Ty_arr (args1, ret1), Ty_arr (args2, ret2) ->
       List.iter2_exn args1 args2 ~f:unify;
       unify ret1 ret2
@@ -150,7 +158,7 @@ let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
     | ty, Ty_var ({ contents = Ty_var_unbound { id; lvl } } as var) ->
       occurs_check lvl id ty;
       var := Ty_var_link ty
-    | ty1, ty2 -> type_unification_error ty1 ty2
+    | ty1, ty2 -> type_error (Error_unification (ty1, ty2))
 
 and unify_row row1 row2 =
   match (row1, row2) with
@@ -180,10 +188,10 @@ and unify_row row1 row2 =
     let row2 =
       try rewrite row2 with
       | Row_rewrite_error ->
-        type_unification_error (Ty_record row1) (Ty_record row2)
+        type_error (Error_unification (Ty_record row1, Ty_record row2))
     in
     (match row1_unbound with
-    | Some { contents = Ty_var_link _ } -> type_error "recursive row types"
+    | Some { contents = Ty_var_link _ } -> type_error Error_recursive_row_types
     | _ -> ());
     unify_row row1 row2
   | Ty_row_var { contents = Ty_var_link row1 }, row2
@@ -193,12 +201,14 @@ and unify_row row1 row2 =
   | row, Ty_row_var ({ contents = Ty_var_unbound { id; lvl } } as var) ->
     occurs_check lvl id (Ty_record row);
     var := Ty_var_link row
-  | row1, row2 -> type_unification_error (Ty_record row1) (Ty_record row2)
+  | row1, row2 ->
+    type_error (Error_unification (Ty_record row1, Ty_record row2))
 
 let rec unify_abs lvl arity ty =
   match ty with
   | Expr.Ty_arr (ty_args, ty_ret) ->
-    if List.length ty_args <> arity then type_error "arity mismatch";
+    if List.length ty_args <> arity then
+      type_error (Error_arity_mismatch (arity, List.length ty_args));
     (ty_args, ty_ret)
   | Ty_var var -> (
     match !var with
@@ -213,7 +223,7 @@ let rec unify_abs lvl arity ty =
   | Ty_app _
   | Ty_const _
   | Ty_record _ ->
-    type_error "expected a function"
+    type_error Error_not_a_function
 
 let rec infer' lvl env (e : Expr.expr) =
   match e with
@@ -221,7 +231,7 @@ let rec infer' lvl env (e : Expr.expr) =
     let ty =
       match Map.find env name with
       | Some ty -> ty
-      | None -> type_errorf "unknown name `%s`" name
+      | None -> type_error (Error_unknown_name name)
     in
     instantiate lvl ty
   | Expr_abs (args, body) ->

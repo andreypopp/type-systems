@@ -30,7 +30,7 @@ let expect_type code ty =
         Caml.print_endline ("ERROR: " ^ Mu.Expr.show_ty inferred_ty);
         Caml.exit 1)
     with
-    | Mu.Infer.Type_error msg -> Caml.print_endline msg
+    | Mu.Infer.Type_error msg -> Caml.print_endline (Mu.Infer.show_error msg)
   in
   ()
 
