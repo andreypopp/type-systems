@@ -1,4 +1,4 @@
 (executable
  (public_name mu)
  (name main)
- (libraries mu))
+ (libraries mu base stdio))
