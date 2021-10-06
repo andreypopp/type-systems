@@ -17,14 +17,20 @@ rule token = parse
 	| "rec"                 { REC }
 	| "in"                  { IN }
 	| "forall"              { FORALL }
+	| "with"                { WITH }
 	| ident                 { IDENT (Lexing.lexeme lexbuf) }
 	| '('     { LPAREN }
 	| ')'     { RPAREN }
 	| '['     { LBRACKET }
 	| ']'     { RBRACKET }
+	| '{'     { LBRACE }
+  | '}'     { RBRACE }
 	| '='     { EQUALS }
+	| ':' '=' { ASSIGN }
 	| "->"    { ARROW }
 	| ','     { COMMA }
+	| '.'     { DOT }
+	| ';'     { SEMI }
 	| eof     { EOF }
 	| _ as c  { raise (Error ("unexpected token: '" ^ Char.escaped c ^ "'")) }
 
@@ -37,14 +43,20 @@ let string_of_token = function
 	| REC -> "rec"
 	| IN -> "in"
 	| FORALL -> "forall"
+	| WITH -> "forall"
 	| IDENT ident -> ident
 	| LPAREN -> "("
 	| RPAREN -> ")"
 	| LBRACKET -> "["
 	| RBRACKET -> "]"
+	| LBRACE -> "{"
+  | RBRACE -> "}"
 	| EQUALS -> "="
+	| ASSIGN -> ":="
 	| ARROW -> "->"
 	| COMMA -> ","
+	| DOT -> "."
+	| SEMI -> "."
 	| EOF -> "<eof>"
 
 }
