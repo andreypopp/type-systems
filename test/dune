@@ -1,2 +1,6 @@
-(test
- (name mu))
+(library
+ (name test_mu)
+ (inline_tests)
+ (preprocess
+  (pps ppx_expect))
+ (libraries base mu))

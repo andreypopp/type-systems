@@ -34,6 +34,12 @@ let parse_expr = Expr_parser.parse_string
 
 let parse_ty = Ty_parser.parse_string
 
+let empty_env = Map.empty (module String)
+
+let infer_ty ?(env = empty_env) expr =
+  try Ok (Infer.infer env expr) with
+  | Infer.Type_error err -> Error err
+
 let () =
   Expr_parser.pp_exceptions ();
   Ty_parser.pp_exceptions ()
