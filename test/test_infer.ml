@@ -148,7 +148,7 @@ let%expect_test "" =
   infer "{ name = world }";
   [%expect {|
     { name = world }
-    : { name: string;  }
+    : { name: string; }
     | |}]
 
 let%expect_test "" =
@@ -185,7 +185,7 @@ let%expect_test "" =
   [%expect
     {|
     fun user -> { name = user.name; age = user.age }
-    : { name: a; age: b; c } -> { age: b; name: a;  }
+    : { name: a; age: b; c } -> { age: b; name: a; }
     | |}]
 
 let%expect_test "" =
@@ -193,7 +193,7 @@ let%expect_test "" =
   [%expect
     {|
     { { name = world } with age = age }
-    : { age: int; name: string;  }
+    : { age: int; name: string; }
     | |}]
 
 let%expect_test "" =
@@ -232,7 +232,7 @@ let%expect_test "" =
   [%expect
     {|
     let add_age = fun x -> { x with age = age } in add_age({ age = world })
-    : { age: int; age: string;  }
+    : { age: int; age: string; }
     | |}]
 
 let%expect_test "" =
@@ -244,7 +244,7 @@ let%expect_test "" =
   [%expect
     {|
     let add_age = fun x -> { x with age = age } in add_age({ age = age })
-    : { age: int; age: int;  }
+    : { age: int; age: int; }
     | |}]
 
 let%expect_test "" =
@@ -263,7 +263,7 @@ let%expect_test "" =
   [%expect
     {|
     { { num = age } with num := age }
-    : { num: int;  }
+    : { num: int; }
     | |}]
 
 let%expect_test "" =
@@ -297,7 +297,7 @@ let%expect_test "" =
   [%expect
     {|
     let upd_age = fun x -> { x with age := age } in upd_age({ age = age })
-    : { age: int;  }
+    : { age: int; }
     | |}]
 
 let%expect_test "" =
@@ -664,19 +664,19 @@ let%expect_test "" = infer "({}).x";
 let%expect_test "" = infer "{a = one}";
   [%expect {|
     { a = one }
-    : { a: int;  }
+    : { a: int; }
     | |}]
 
 let%expect_test "" = infer "{a = one; b = true}";
   [%expect {|
     { a = one; b = true }
-    : { b: bool; a: int;  }
+    : { b: bool; a: int; }
     | |}]
 
 let%expect_test "" = infer "{b = true; a = one}";
   [%expect {|
     { b = true; a = one }
-    : { a: int; b: bool;  }
+    : { a: int; b: bool; }
     | |}]
 
 let%expect_test "" = infer "({a = one; b = true}).a";
@@ -703,7 +703,7 @@ let%expect_test "" = infer "({a = one; b = true}).c";
 let%expect_test "" = infer "{f = fun x -> x}";
   [%expect {|
     { f = fun x -> x }
-    : { f: a -> a;  }
+    : { f: a -> a; }
     | |}]
 
 let%expect_test "" = infer "let r = {a = id; b = succ} in choose(r.a, r.b)";
@@ -725,26 +725,26 @@ let%expect_test "" = infer "choose({a = one}, {})";
     ERROR: unification error of
       {  }
     with
-      { a: int;  }
+      { a: int; }
     | |}]
 
 let%expect_test "" = infer "{ { {} with y = one } with x = zero }";
   [%expect {|
     { { {  } with y = one } with x = zero }
-    : { x: int; y: int;  }
+    : { x: int; y: int; }
     | |}]
 
 let%expect_test "" =
   infer "choose({ { {} with y = one } with x = zero }, {x = one; y = zero})";
   [%expect {|
     choose({ { {  } with y = one } with x = zero }, { x = one; y = zero })
-    : { x: int; y: int;  }
+    : { x: int; y: int; }
     | |}]
 
 let%expect_test "" = infer "{ {x = one } with x = true }";
   [%expect {|
     { { x = one } with x = true }
-    : { x: bool; x: int;  }
+    : { x: bool; x: int; }
     | |}]
 
 let%expect_test "" = infer "{ {x = one } with x := true }";
@@ -804,7 +804,7 @@ let%expect_test "" = infer "fun r -> {r with x := one}";
 let%expect_test "" = infer "let addx = fun r -> {r with x = one} in addx({})";
   [%expect {|
     let addx = fun r -> { r with x = one } in addx({  })
-    : { x: int;  }
+    : { x: int; }
     | |}]
 
 let%expect_test "" = infer "let addx = fun r -> {r with x := one} in addx({})";
@@ -820,14 +820,14 @@ let%expect_test "" =
   infer "let addx = fun r -> {r with x = one} in addx({x = one})";
   [%expect {|
     let addx = fun r -> { r with x = one } in addx({ x = one })
-    : { x: int; x: int;  }
+    : { x: int; x: int; }
     | |}]
 
 let%expect_test "" =
   infer "let addx = fun r -> {r with x := one} in addx({x = one})";
   [%expect {|
     let addx = fun r -> { r with x := one } in addx({ x = one })
-    : { x: int;  }
+    : { x: int; }
     | |}]
 
 let%expect_test "" = infer "fun r -> r.x";
@@ -857,26 +857,26 @@ let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {{} with x = one})";
   [%expect {|
     fun r -> choose({ r with x = zero }, { {  } with x = one })
-    : {  } -> { x: int;  }
+    : {  } -> { x: int; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {{} with x = one})";
   [%expect {|
     fun r -> choose({ r with x := zero }, { {  } with x = one })
-    : { x: int;  } -> { x: int;  }
+    : { x: int; } -> { x: int; }
     | |}]
 
 let%expect_test "" = infer "fun r -> choose({r with x = zero}, {x = one})";
   [%expect {|
     fun r -> choose({ r with x = zero }, { x = one })
-    : {  } -> { x: int;  }
+    : {  } -> { x: int; }
     | |}]
 
 let%expect_test "" = infer "fun r -> choose({r with x := zero}, {x = one})";
   [%expect {|
     fun r -> choose({ r with x := zero }, { x = one })
-    : { x: int;  } -> { x: int;  }
+    : { x: int; } -> { x: int; }
     | |}]
 
 let%expect_test "" =
@@ -922,7 +922,7 @@ let%expect_test "" = infer "let f = fun x -> x.t(one) in f({t = id})";
 let%expect_test "" = infer "{x = one; x = true}";
   [%expect {|
     { x = one; x = true }
-    : { x: bool; x: int;  }
+    : { x: bool; x: int; }
     | |}]
 
 let%expect_test "" =
@@ -939,20 +939,20 @@ let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {x = true; x = one})";
   [%expect {|
     fun r -> choose({ r with x = zero }, { x = true; x = one })
-    : { x: bool;  } -> { x: int; x: bool;  }
+    : { x: bool; } -> { x: int; x: bool; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {x = true; x = one})";
   [%expect {|
     fun r -> choose({ r with x := zero }, { x = true; x = one })
-    : { x: int; x: bool;  } -> { x: int; x: bool;  }
+    : { x: int; x: bool; } -> { x: int; x: bool; }
     | |}]
 
 let%expect_test "" = infer "fun r -> choose(r, {x = one; x = true})";
   [%expect {|
     fun r -> choose(r, { x = one; x = true })
-    : { x: bool; x: int;  } -> { x: bool; x: int;  }
+    : { x: bool; x: int; } -> { x: bool; x: int; }
     | |}]
 
 let%expect_test "" =

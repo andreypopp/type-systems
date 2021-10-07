@@ -44,67 +44,90 @@ let build_ty var_name_list ty =
 %%
 
 expr_eof:
-	| e = expr EOF        { e }
+	  e = expr EOF        { e }
 
 ty_eof:
-	| t = ty EOF          { t }
+	  t = ty EOF          { t }
 
 ty_forall_eof:
-	| t = ty_forall EOF   { t }
+	  t = ty_forall EOF   { t }
 
 expr:
-	| e = simple_expr                                       { e }
-	| LET n = IDENT EQUALS e = expr IN b = expr             { Expr_let (n, e, b) }
-	| LET REC n = IDENT EQUALS e = expr IN b = expr         { Expr_let_rec (n, e, b) }
-  | FUN LPAREN RPAREN ARROW body = expr                   { Expr_abs ([], body) }
-  | FUN arg = IDENT ARROW body = expr                     { Expr_abs ([arg], body) }
-	| FUN LPAREN args = param_list RPAREN ARROW body = expr { Expr_abs (args, body) }
-  | LBRACE RBRACE                                         { Expr_record [] }
-  | LBRACE fs = field_list RBRACE                         { Expr_record fs }
-  | LBRACE e = expr WITH fs = field_list RBRACE           { Expr_record_extend (e, fs) }
-  | LBRACE e = expr WITH fs = field_assign_list RBRACE    { Expr_record_update (e, fs) }
+	  e = simple_expr     { e }
+
+	(* let-bindings *)
+	| LET n = IDENT EQUALS e = expr IN b = expr     { Expr_let (n, e, b) }
+	| LET REC n = IDENT EQUALS e = expr IN b = expr { Expr_let_rec (n, e, b) }
+
+	(* functions *)
+  | FUN arg = IDENT ARROW body = expr
+    { Expr_abs ([arg], body) }
+	| FUN LPAREN args = flex_list(COMMA, IDENT) RPAREN ARROW body = expr
+	  { Expr_abs (args, body) }
+
+  (* records *)
+  | LBRACE fs = flex_list(SEMI, field) RBRACE
+    { Expr_record fs }
+  | LBRACE e = expr WITH fs = nonempty_flex_list(SEMI, field) RBRACE
+    { Expr_record_extend (e, fs) }
+  | LBRACE e = expr WITH fs = nonempty_flex_list(SEMI, field_update) RBRACE
+    { Expr_record_update (e, fs) }
 
 simple_expr:
-	| n = IDENT                                            { Expr_name n }
-	| LPAREN e = expr RPAREN                               { e }
-	| f = simple_expr LPAREN args = expr_comma_list RPAREN { Expr_app (f, args) }
-	| f = simple_expr LPAREN RPAREN                        { Expr_app (f, []) }
-  | e = simple_expr DOT n = IDENT                        { Expr_record_proj (e, n) }
+	  n = IDENT              { Expr_name n }
+	| LPAREN e = expr RPAREN { e }
+	| f = simple_expr LPAREN args = flex_list(COMMA, expr) RPAREN
+	  { Expr_app (f, args) }
+  | e = simple_expr DOT n = IDENT
+    { Expr_record_proj (e, n) }
 
-field_list:
-  | n = IDENT EQUALS e = expr                             { [(n, e)] }
-  | n = IDENT EQUALS e = expr SEMI fs = field_list        { (n, e) :: fs }
+field:
+    n = IDENT EQUALS e = expr { (n, e) }
 
-field_assign_list:
-  | n = IDENT ASSIGN e = expr                             { [(n, e)] }
-  | n = IDENT ASSIGN e = expr SEMI fs = field_assign_list { (n, e) :: fs }
+field_update:
+    n = IDENT ASSIGN e = expr { (n, e) }
+
 ident_list:
-	| n = IDENT                 { [n] }
+	  n = IDENT                 { [n] }
 	| n = IDENT ns = ident_list { n :: ns }
 
-param_list:
-	| n = IDENT                       { [n] }
-	| n = IDENT COMMA ns = param_list { n :: ns }
-
-expr_comma_list:
-	| e = expr                             { [e] }
-	| e = expr COMMA es = expr_comma_list  { e :: es }
-
 ty_forall:
-	| t = ty                                            { t }
+	  t = ty                                            { t }
 	| FORALL LBRACKET vars = ident_list RBRACKET t = ty { build_ty vars t }
 
 ty:
-	| t = simple_ty                                     { t }
-	| LPAREN RPAREN ARROW ret = ty                      { Ty_arr ([], ret) }
-	| arg = simple_ty ARROW ret = ty                    { Ty_arr ([arg], ret) }
-	| LPAREN arg = ty COMMA args = ty_comma_list RPAREN ARROW ret = ty  { Ty_arr (arg :: args, ret) }
+	  t = simple_ty
+	  { t }
+	| LPAREN RPAREN ARROW ret = ty
+	  { Ty_arr ([], ret) }
+	| arg = simple_ty ARROW ret = ty
+	  { Ty_arr ([arg], ret) }
+	| LPAREN arg = ty COMMA args = flex_list(COMMA, ty) RPAREN ARROW ret = ty 
+	  { Ty_arr (arg :: args, ret) }
 
 simple_ty:
-	| n = IDENT                                            { Ty_const n }
-	| f = simple_ty LBRACKET args = ty_comma_list RBRACKET { Ty_app (f, args) }
-	| LPAREN t = ty RPAREN                                 { t }
-	
-ty_comma_list:
-	| t = ty                           { [t] }
-	| t = ty COMMA ts = ty_comma_list  { t :: ts }
+	  n = IDENT             { Ty_const n }
+	| LPAREN t = ty RPAREN  { t }
+	| f = simple_ty LBRACKET args = nonempty_flex_list(COMMA, ty) RBRACKET
+	  { Ty_app (f, args) }
+
+(* Utilities for flexible lists (and its non-empty version).
+
+   A flexible list [flex_list(delim, X)] is the delimited with [delim] list of
+   it [X] items where it is allowed to have a trailing [delim].
+
+   A non-empty [nonempty_flex_list(delim, X)] version of flexible list is
+   provided as well.
+
+   From http://gallium.inria.fr/blog/lr-lists/
+
+ *)
+
+flex_list(delim, X):
+    { [] }
+  | x = X { [x] }
+  | x = X delim xs = flex_list(delim, X) { x::xs }
+
+nonempty_flex_list(delim, X):
+    x = X { [x] }
+  | x = X delim xs = flex_list(delim, X) { x::xs }

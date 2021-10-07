@@ -1,9 +1,10 @@
-open! Base
+open Base
+open Expr
 
-type env = (String.t, Expr.ty, String.comparator_witness) Map.t
+type env = (String.t, ty, String.comparator_witness) Map.t
 
 type error =
-  | Error_unification of Expr.ty * Expr.ty
+  | Error_unification of ty * ty
   | Error_recursive_types
   | Error_recursive_row_types
   | Error_not_a_function
@@ -24,13 +25,13 @@ let doc_of_error =
       ^^ string (Int.to_string got)
     | Error_unification (ty1, ty2) ->
       string "unification error of"
-      ^^ nest 2 (break 1 ^^ Expr.doc_of_ty ty1)
+      ^^ nest 2 (break 1 ^^ doc_of_ty ty1)
       ^^ (break 1 ^^ string "with")
-      ^^ nest 2 (break 1 ^^ Expr.doc_of_ty ty2))
+      ^^ nest 2 (break 1 ^^ doc_of_ty ty2))
 
-let pp_error = Expr.pp' doc_of_error
+let pp_error = pp' doc_of_error
 
-let show_error = Expr.show' doc_of_error
+let show_error = show' doc_of_error
 
 exception Type_error of error
 
@@ -44,28 +45,17 @@ let nextid () =
   Int.incr currentid;
   !currentid
 
-let newvar ?id lvl () =
-  let id =
-    match id with
-    | Some id -> id
-    | None -> nextid ()
-  in
-  Expr.Ty_var { contents = Ty_var_unbound { id; lvl } }
+let newvar lvl () = Ty_var { contents = Ty_var_unbound { id = nextid (); lvl } }
 
-let newrowvar ?id lvl () =
-  let id =
-    match id with
-    | Some id -> id
-    | None -> nextid ()
-  in
-  Expr.Ty_row_var { contents = Ty_var_unbound { id; lvl } }
+let newrowvar lvl () =
+  Ty_row_var { contents = Ty_var_unbound { id = nextid (); lvl } }
 
-let newgenvar () = Expr.Ty_var { contents = Ty_var_generic (nextid ()) }
+let newgenvar () = Ty_var { contents = Ty_var_generic (nextid ()) }
 
-let instantiate lvl (ty : Expr.ty) : Expr.ty =
+let instantiate lvl (ty : ty) : ty =
   let vars = Hashtbl.create (module Int) in
   let rowvars = Hashtbl.create (module Int) in
-  let rec instantiate_ty (ty : Expr.ty) : Expr.ty =
+  let rec instantiate_ty (ty : ty) : ty =
     match ty with
     | Ty_const _ -> ty
     | Ty_arr (ty_args, ty_ret) ->
@@ -77,7 +67,7 @@ let instantiate lvl (ty : Expr.ty) : Expr.ty =
     | Ty_var { contents = Ty_var_generic id } ->
       Hashtbl.find_or_add vars id ~default:(newvar lvl)
     | Ty_record row -> Ty_record (instantiate_ty_row row)
-  and instantiate_ty_row (ty_row : Expr.ty_row) =
+  and instantiate_ty_row (ty_row : ty_row) =
     match ty_row with
     | Ty_row_field (name, ty, ty_row) ->
       Ty_row_field (name, instantiate_ty ty, instantiate_ty_row ty_row)
@@ -89,10 +79,10 @@ let instantiate lvl (ty : Expr.ty) : Expr.ty =
   in
   instantiate_ty ty
 
-let generalize lvl (ty : Expr.ty) =
+let generalize lvl (ty : ty) =
   let rec generalize_ty ty =
     match ty with
-    | Expr.Ty_const _ -> ty
+    | Ty_const _ -> ty
     | Ty_arr (ty_args, ty_ret) ->
       Ty_arr (List.map ty_args ~f:generalize_ty, generalize_ty ty_ret)
     | Ty_app (ty, ty_args) ->
@@ -102,7 +92,7 @@ let generalize lvl (ty : Expr.ty) =
     | Ty_var { contents = Ty_var_unbound { id; lvl = var_lvl } } ->
       if var_lvl > lvl then Ty_var { contents = Ty_var_generic id } else ty
     | Ty_record row -> Ty_record (generalize_ty_row row)
-  and generalize_ty_row (ty_row : Expr.ty_row) =
+  and generalize_ty_row (ty_row : ty_row) =
     match ty_row with
     | Ty_row_field (name, ty, row) ->
       Ty_row_field (name, generalize_ty ty, generalize_ty_row row)
@@ -116,9 +106,9 @@ let generalize lvl (ty : Expr.ty) =
   generalize_ty ty
 
 let occurs_check lvl id ty =
-  let rec occurs_check_ty (ty : Expr.ty) : unit =
+  let rec occurs_check_ty (ty : ty) : unit =
     match ty with
-    | Expr.Ty_const _ -> ()
+    | Ty_const _ -> ()
     | Ty_arr (args, ret) ->
       List.iter args ~f:occurs_check_ty;
       occurs_check_ty ret
@@ -132,7 +122,7 @@ let occurs_check lvl id ty =
       else if lvl < v.lvl then var := Ty_var_unbound { id = v.id; lvl }
       else ()
     | Ty_record ty_row -> occurs_check_ty_row ty_row
-  and occurs_check_ty_row (ty_row : Expr.ty_row) : unit =
+  and occurs_check_ty_row (ty_row : ty_row) : unit =
     match ty_row with
     | Ty_row_field (_name, ty, ty_row) ->
       occurs_check_ty ty;
@@ -147,7 +137,7 @@ let occurs_check lvl id ty =
   in
   occurs_check_ty ty
 
-let rec unify (ty1 : Expr.ty) (ty2 : Expr.ty) =
+let rec unify (ty1 : ty) (ty2 : ty) =
   if phys_equal ty1 ty2 then ()
   else
     match (ty1, ty2) with
@@ -178,7 +168,7 @@ and unify_row row1 row2 =
     | Ty_row_field (name, ty, row1), Ty_row_field _ ->
       let exception Row_rewrite_error in
       let rec rewrite = function
-        | Expr.Ty_row_empty -> raise Row_rewrite_error
+        | Ty_row_empty -> raise Row_rewrite_error
         | Ty_row_field (name', ty', row') ->
           if String.(name = name') then (
             unify ty ty';
@@ -219,7 +209,7 @@ and unify_row row1 row2 =
 
 let rec unify_abs arity ty =
   match ty with
-  | Expr.Ty_arr (ty_args, ty_ret) ->
+  | Ty_arr (ty_args, ty_ret) ->
     if List.length ty_args <> arity then
       type_error (Error_arity_mismatch (arity, List.length ty_args));
     (ty_args, ty_ret)
@@ -237,7 +227,7 @@ let rec unify_abs arity ty =
   | Ty_record _ ->
     type_error Error_not_a_function
 
-let rec infer' lvl env (e : Expr.expr) =
+let rec infer' lvl env (e : expr) =
   match e with
   | Expr_name name ->
     let ty =
@@ -255,7 +245,7 @@ let rec infer' lvl env (e : Expr.expr) =
       in
       infer' lvl env body
     in
-    Expr.Ty_arr (ty_args, ty_body)
+    Ty_arr (ty_args, ty_body)
   | Expr_app (func, args) ->
     let ty_args, ty_ret =
       let ty_func = infer' lvl env func in
@@ -282,16 +272,15 @@ let rec infer' lvl env (e : Expr.expr) =
     infer' lvl env b
   | Expr_record fields ->
     let ty_row =
-      List.fold_left fields ~init:Expr.Ty_row_empty ~f:(fun row (label, e) ->
+      List.fold_left fields ~init:Ty_row_empty ~f:(fun row (label, e) ->
           let ty_e = infer' lvl env e in
           Ty_row_field (label, ty_e, row))
     in
-    Expr.Ty_record ty_row
+    Ty_record ty_row
   | Expr_record_proj (e, label) ->
     let ty_e = infer' lvl env e in
     let ty_proj = newvar lvl () in
-    unify ty_e
-      (Expr.Ty_record (Ty_row_field (label, ty_proj, newrowvar lvl ())));
+    unify ty_e (Ty_record (Ty_row_field (label, ty_proj, newrowvar lvl ())));
     ty_proj
   | Expr_record_extend (e, fields) ->
     let ty_row = newrowvar lvl () in
@@ -301,8 +290,8 @@ let rec infer' lvl env (e : Expr.expr) =
           unify ty_e (infer' lvl env e);
           Ty_row_field (label, ty_e, ty_row))
     in
-    unify (Expr.Ty_record ty_row) (infer' lvl env e);
-    Expr.Ty_record return_ty_row
+    unify (Ty_record ty_row) (infer' lvl env e);
+    Ty_record return_ty_row
   | Expr_record_update (e, fields) ->
     let ty_row = newrowvar lvl () in
     let return_ty_row, _, to_unify =
@@ -317,11 +306,11 @@ let rec infer' lvl env (e : Expr.expr) =
             Set.add labels label,
             (e, ty_e) :: to_unify ))
     in
-    unify (Expr.Ty_record return_ty_row) (infer' lvl env e);
+    unify (Ty_record return_ty_row) (infer' lvl env e);
     List.iter (List.rev to_unify) ~f:(fun (e, ty_e) ->
         unify ty_e (infer' lvl env e));
-    Expr.Ty_record return_ty_row
-  | Expr_lit (Lit_string _) -> Expr.Ty_const "string"
-  | Expr_lit (Lit_int _) -> Expr.Ty_const "int"
+    Ty_record return_ty_row
+  | Expr_lit (Lit_string _) -> Ty_const "string"
+  | Expr_lit (Lit_int _) -> Ty_const "int"
 
 let infer env e = generalize (-1) (infer' 0 env e)

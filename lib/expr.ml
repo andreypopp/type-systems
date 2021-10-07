@@ -132,12 +132,14 @@ let doc_of_ty ty =
     | Ty_record row ->
       let rec doc_of_ty_row = function
         | Ty_row_empty -> empty
-        | Ty_row_field (name, ty, row) ->
+        | Ty_row_field (name, ty, row) -> (
           string name
           ^^ string ": "
           ^^ doc_of_ty ty
-          ^^ string "; "
-          ^^ doc_of_ty_row row
+          ^^
+          match row with
+          | Ty_row_empty -> string ";"
+          | row -> string "; " ^^ doc_of_ty_row row)
         | Ty_row_var { contents } -> doc_of_ty_var doc_of_ty_row contents
       in
       surround 2 1 (string "{") (doc_of_ty_row row) (string "}")
