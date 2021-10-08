@@ -28,9 +28,11 @@ rule token = parse
 	| '='     { EQUALS }
 	| ':' '=' { ASSIGN }
 	| "->"    { ARROW }
+	| "=>"    { GTE }
 	| ','     { COMMA }
 	| '.'     { DOT }
 	| ';'     { SEMI }
+	| ':'     { COLON }
 	| eof     { EOF }
 	| _ as c  { raise (Error ("unexpected token: '" ^ Char.escaped c ^ "'")) }
 
@@ -57,6 +59,8 @@ let string_of_token = function
 	| COMMA -> ","
 	| DOT -> "."
 	| SEMI -> "."
+	| COLON -> ":"
+	| GTE -> "=>"
 	| EOF -> "<eof>"
 
 }

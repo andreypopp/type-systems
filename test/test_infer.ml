@@ -1,32 +1,32 @@
 open Base
 
 let env =
-  let assume name ty env = Map.set env ~key:name ~data:(Mu.parse_ty ty) in
-  Mu.empty_env
+  let assume name ty env = Mu.Infer.Env.add env name (Mu.parse_ty ty) in
+  Mu.Infer.Env.empty
   |> assume "head" "forall[a] list[a] -> a"
   |> assume "tail" "forall[a] list[a] -> list[a]"
   |> assume "nil" "forall[a] list[a]"
   |> assume "cons" "forall[a] (a, list[a]) -> list[a]"
   |> assume "cons_curry" "forall[a] a -> list[a] -> list[a]"
-  |> assume "map" "forall[a b] (a -> b, list[a]) -> list[b]"
-  |> assume "map_curry" "forall[a b] (a -> b) -> list[a] -> list[b]"
+  |> assume "map" "forall[a, b] (a -> b, list[a]) -> list[b]"
+  |> assume "map_curry" "forall[a, b] (a -> b) -> list[a] -> list[b]"
   |> assume "one" "int"
   |> assume "zero" "int"
   |> assume "succ" "int -> int"
-  |> assume "plus" "(int, int) -> inc"
+  |> assume "plus" "(int, int) -> int"
   |> assume "eq" "forall[a] (a, a) -> bool"
   |> assume "eq_curry" "forall[a] a -> a -> bool"
   |> assume "not" "bool -> bool"
   |> assume "true" "bool"
   |> assume "false" "bool"
-  |> assume "pair" "forall[a b] (a, b) -> pair[a, b]"
-  |> assume "pair_curry" "forall[a b] a -> b -> pair[a, b]"
-  |> assume "first" "forall[a b] pair[a, b] -> a"
-  |> assume "second" "forall[a b] pair[a, b] -> b"
+  |> assume "pair" "forall[a, b] (a, b) -> pair[a, b]"
+  |> assume "pair_curry" "forall[a, b] a -> b -> pair[a, b]"
+  |> assume "first" "forall[a, b] pair[a, b] -> a"
+  |> assume "second" "forall[a, b] pair[a, b] -> b"
   |> assume "id" "forall[a] a -> a"
-  |> assume "const" "forall[a b] a -> b -> a"
-  |> assume "apply" "forall[a b] (a -> b, a) -> b"
-  |> assume "apply_curry" "forall[a b] (a -> b) -> a -> b"
+  |> assume "const" "forall[a, b] a -> b -> a"
+  |> assume "apply" "forall[a, b] (a -> b, a) -> b"
+  |> assume "apply_curry" "forall[a, b] (a -> b) -> a -> b"
   |> assume "choose" "forall[a] (a, a) -> a"
   |> assume "choose_curry" "forall[a] a -> a -> a"
   |> assume "age" "int"
@@ -35,11 +35,11 @@ let env =
   |> assume "print_user" "(string,age) -> string"
 
 let infer code =
-  Mu.Infer.resetid ();
+  Mu.Infer.reset_vars ();
   let prog = Mu.parse_expr code in
   Caml.Format.printf "%s@." (Mu.Expr.show_expr prog);
   match Mu.infer_ty ~env prog with
-  | Ok ty -> Caml.Format.printf ": %s@.|" (Mu.Expr.show_ty ty)
+  | Ok qty -> Caml.Format.printf ": %s@.|" (Mu.Expr.show_qual_ty qty)
   | Error err -> Caml.Format.printf "ERROR: %s@.|" (Mu.Infer.show_error err)
 
 let%expect_test "" =
@@ -533,7 +533,8 @@ let%expect_test "" =
   [%expect
     {|
     plus(one)
-    ERROR: arity mismatch: expected1 but got 2
+    ERROR: arity mismatch: expected 2 arguments but got 1
+      (int, int) -> int
     | |}]
 
 let%expect_test "" =
@@ -607,7 +608,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "one(id)";
-  [%expect {|
+  [%expect
+    {|
     one(id)
     ERROR: expected a function but got:
       int
@@ -647,14 +649,17 @@ let%expect_test "" =
 
 (* TESTS FROM type-systems repo: records *)
 
-let%expect_test "" = infer "{}";
+let%expect_test "" =
+  infer "{}";
   [%expect {|
     {  }
     : {  }
     | |}]
 
-let%expect_test "" = infer "({}).x";
-  [%expect {|
+let%expect_test "" =
+  infer "({}).x";
+  [%expect
+    {|
     ({  }).x
     ERROR: unification error of
       {  }
@@ -662,38 +667,45 @@ let%expect_test "" = infer "({}).x";
       { x: _1; _2 }
     | |}]
 
-let%expect_test "" = infer "{a = one}";
+let%expect_test "" =
+  infer "{a = one}";
   [%expect {|
     { a = one }
     : { a: int; }
     | |}]
 
-let%expect_test "" = infer "{a = one; b = true}";
+let%expect_test "" =
+  infer "{a = one; b = true}";
   [%expect {|
     { a = one; b = true }
     : { b: bool; a: int; }
     | |}]
 
-let%expect_test "" = infer "{b = true; a = one}";
+let%expect_test "" =
+  infer "{b = true; a = one}";
   [%expect {|
     { b = true; a = one }
     : { a: int; b: bool; }
     | |}]
 
-let%expect_test "" = infer "({a = one; b = true}).a";
+let%expect_test "" =
+  infer "({a = one; b = true}).a";
   [%expect {|
     ({ a = one; b = true }).a
     : int
     | |}]
 
-let%expect_test "" = infer "({a = one; b = true}).b";
+let%expect_test "" =
+  infer "({a = one; b = true}).b";
   [%expect {|
     ({ a = one; b = true }).b
     : bool
     | |}]
 
-let%expect_test "" = infer "({a = one; b = true}).c";
-  [%expect {|
+let%expect_test "" =
+  infer "({a = one; b = true}).c";
+  [%expect
+    {|
     ({ a = one; b = true }).c
     ERROR: unification error of
       {  }
@@ -701,27 +713,33 @@ let%expect_test "" = infer "({a = one; b = true}).c";
       { c: _1; _4 }
     | |}]
 
-let%expect_test "" = infer "{f = fun x -> x}";
+let%expect_test "" =
+  infer "{f = fun x -> x}";
   [%expect {|
     { f = fun x -> x }
     : { f: a -> a; }
     | |}]
 
-let%expect_test "" = infer "let r = {a = id; b = succ} in choose(r.a, r.b)";
-  [%expect {|
+let%expect_test "" =
+  infer "let r = {a = id; b = succ} in choose(r.a, r.b)";
+  [%expect
+    {|
     let r = { a = id; b = succ } in choose(r.a, r.b)
     : int -> int
     | |}]
 
 let%expect_test "" =
   infer "let r = {a = id; b = fun x -> x} in choose(r.a, r.b)";
-  [%expect {|
+  [%expect
+    {|
     let r = { a = id; b = fun x -> x } in choose(r.a, r.b)
     : a -> a
     | |}]
 
-let%expect_test "" = infer "choose({a = one}, {})";
-  [%expect {|
+let%expect_test "" =
+  infer "choose({a = one}, {})";
+  [%expect
+    {|
     choose({ a = one }, {  })
     ERROR: unification error of
       {  }
@@ -729,27 +747,34 @@ let%expect_test "" = infer "choose({a = one}, {})";
       { a: int; }
     | |}]
 
-let%expect_test "" = infer "{ { {} with y = one } with x = zero }";
-  [%expect {|
+let%expect_test "" =
+  infer "{ { {} with y = one } with x = zero }";
+  [%expect
+    {|
     { { {  } with y = one } with x = zero }
     : { x: int; y: int; }
     | |}]
 
 let%expect_test "" =
   infer "choose({ { {} with y = one } with x = zero }, {x = one; y = zero})";
-  [%expect {|
+  [%expect
+    {|
     choose({ { {  } with y = one } with x = zero }, { x = one; y = zero })
     : { x: int; y: int; }
     | |}]
 
-let%expect_test "" = infer "{ {x = one } with x = true }";
-  [%expect {|
+let%expect_test "" =
+  infer "{ {x = one } with x = true }";
+  [%expect
+    {|
     { { x = one } with x = true }
     : { x: bool; x: int; }
     | |}]
 
-let%expect_test "" = infer "{ {x = one } with x := true }";
-  [%expect {|
+let%expect_test "" =
+  infer "{ {x = one } with x := true }";
+  [%expect
+    {|
     { { x = one } with x := true }
     ERROR: unification error of
       int
@@ -757,8 +782,10 @@ let%expect_test "" = infer "{ {x = one } with x := true }";
       bool
     | |}]
 
-let%expect_test "" = infer "let a = {} in {a with b := one}";
-  [%expect {|
+let%expect_test "" =
+  infer "let a = {} in {a with b := one}";
+  [%expect
+    {|
     let a = {  } in { a with b := one }
     ERROR: unification error of
       { b: _2; _1 }
@@ -766,14 +793,18 @@ let%expect_test "" = infer "let a = {} in {a with b := one}";
       {  }
     | |}]
 
-let%expect_test "" = infer "let a = {x = one} in ({a with x = true}).x";
-  [%expect {|
+let%expect_test "" =
+  infer "let a = {x = one} in ({a with x = true}).x";
+  [%expect
+    {|
     let a = { x = one } in ({ a with x = true }).x
     : bool
     | |}]
 
-let%expect_test "" = infer "let a = {x = one} in ({a with x := true}).x";
-  [%expect {|
+let%expect_test "" =
+  infer "let a = {x = one} in ({a with x := true}).x";
+  [%expect
+    {|
     let a = { x = one } in ({ a with x := true }).x
     ERROR: unification error of
       int
@@ -781,8 +812,10 @@ let%expect_test "" = infer "let a = {x = one} in ({a with x := true}).x";
       bool
     | |}]
 
-let%expect_test "" = infer "let a = {x = one} in a.y";
-  [%expect {|
+let%expect_test "" =
+  infer "let a = {x = one} in a.y";
+  [%expect
+    {|
     let a = { x = one } in a.y
     ERROR: unification error of
       {  }
@@ -790,26 +823,34 @@ let%expect_test "" = infer "let a = {x = one} in a.y";
       { y: _1; _3 }
     | |}]
 
-let%expect_test "" = infer "fun r -> {r with x = one}";
-  [%expect {|
+let%expect_test "" =
+  infer "fun r -> {r with x = one}";
+  [%expect
+    {|
     fun r -> { r with x = one }
     : { a } -> { x: int; a }
     | |}]
 
-let%expect_test "" = infer "fun r -> {r with x := one}";
-  [%expect {|
+let%expect_test "" =
+  infer "fun r -> {r with x := one}";
+  [%expect
+    {|
     fun r -> { r with x := one }
     : { x: int; a } -> { x: int; a }
     | |}]
 
-let%expect_test "" = infer "let addx = fun r -> {r with x = one} in addx({})";
-  [%expect {|
+let%expect_test "" =
+  infer "let addx = fun r -> {r with x = one} in addx({})";
+  [%expect
+    {|
     let addx = fun r -> { r with x = one } in addx({  })
     : { x: int; }
     | |}]
 
-let%expect_test "" = infer "let addx = fun r -> {r with x := one} in addx({})";
-  [%expect {|
+let%expect_test "" =
+  infer "let addx = fun r -> {r with x := one} in addx({})";
+  [%expect
+    {|
     let addx = fun r -> { r with x := one } in addx({  })
     ERROR: unification error of
       {  }
@@ -819,19 +860,22 @@ let%expect_test "" = infer "let addx = fun r -> {r with x := one} in addx({})";
 
 let%expect_test "" =
   infer "let addx = fun r -> {r with x = one} in addx({x = one})";
-  [%expect {|
+  [%expect
+    {|
     let addx = fun r -> { r with x = one } in addx({ x = one })
     : { x: int; x: int; }
     | |}]
 
 let%expect_test "" =
   infer "let addx = fun r -> {r with x := one} in addx({x = one})";
-  [%expect {|
+  [%expect
+    {|
     let addx = fun r -> { r with x := one } in addx({ x = one })
     : { x: int; }
     | |}]
 
-let%expect_test "" = infer "fun r -> r.x";
+let%expect_test "" =
+  infer "fun r -> r.x";
   [%expect {|
     fun r -> r.x
     : { x: a; b } -> a
@@ -839,14 +883,16 @@ let%expect_test "" = infer "fun r -> r.x";
 
 let%expect_test "" =
   infer "let get_x = fun r -> r.x in get_x({y = one; x = zero})";
-  [%expect {|
+  [%expect
+    {|
     let get_x = fun r -> r.x in get_x({ y = one; x = zero })
     : int
     | |}]
 
 let%expect_test "" =
   infer "let get_x = fun r -> r.x in get_x({y = one; z = true})";
-  [%expect {|
+  [%expect
+    {|
     let get_x = fun r -> r.x in get_x({ y = one; z = true })
     ERROR: unification error of
       {  }
@@ -856,71 +902,85 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {{} with x = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { {  } with x = one })
     : {  } -> { x: int; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {{} with x = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { {  } with x = one })
     : { x: int; } -> { x: int; }
     | |}]
 
-let%expect_test "" = infer "fun r -> choose({r with x = zero}, {x = one})";
-  [%expect {|
+let%expect_test "" =
+  infer "fun r -> choose({r with x = zero}, {x = one})";
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { x = one })
     : {  } -> { x: int; }
     | |}]
 
-let%expect_test "" = infer "fun r -> choose({r with x := zero}, {x = one})";
-  [%expect {|
+let%expect_test "" =
+  infer "fun r -> choose({r with x := zero}, {x = one})";
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { x = one })
     : { x: int; } -> { x: int; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {r with x = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { r with x = one })
     : { a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {r with x := one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { r with x := one })
     : { x: int; a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {r with y = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { r with y = one })
     ERROR: recursive row types
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {r with y := one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { r with y := one })
     : { x: int; y: int; a } -> { x: int; y: int; a }
     | |}]
 
-let%expect_test "" = infer "let f = fun x -> x.t(one) in f({t = succ})";
-  [%expect {|
+let%expect_test "" =
+  infer "let f = fun x -> x.t(one) in f({t = succ})";
+  [%expect
+    {|
     let f = fun x -> x.t(one) in f({ t = succ })
     : int
     | |}]
 
-let%expect_test "" = infer "let f = fun x -> x.t(one) in f({t = id})";
+let%expect_test "" =
+  infer "let f = fun x -> x.t(one) in f({t = id})";
   [%expect {|
     let f = fun x -> x.t(one) in f({ t = id })
     : int
     | |}]
 
-let%expect_test "" = infer "{x = one; x = true}";
+let%expect_test "" =
+  infer "{x = one; x = true}";
   [%expect {|
     { x = one; x = true }
     : { x: bool; x: int; }
@@ -928,7 +988,8 @@ let%expect_test "" = infer "{x = one; x = true}";
 
 let%expect_test "" =
   infer "let f = fun r -> let y = r.y in choose(r, {x = one; x = true}) in f";
-  [%expect {|
+  [%expect
+    {|
     let f = fun r -> let y = r.y in choose(r, { x = one; x = true }) in f
     ERROR: unification error of
       {  }
@@ -938,27 +999,32 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {x = true; x = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { x = true; x = one })
     : { x: bool; } -> { x: int; x: bool; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {x = true; x = one})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { x = true; x = one })
     : { x: int; x: bool; } -> { x: int; x: bool; }
     | |}]
 
-let%expect_test "" = infer "fun r -> choose(r, {x = one; x = true})";
-  [%expect {|
+let%expect_test "" =
+  infer "fun r -> choose(r, {x = one; x = true})";
+  [%expect
+    {|
     fun r -> choose(r, { x = one; x = true })
     : { x: bool; x: int; } -> { x: bool; x: int; }
     | |}]
 
 let%expect_test "" =
   infer "fun r -> choose({r with x = zero}, {r with x = true})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x = zero }, { r with x = true })
     ERROR: unification error of
       bool
@@ -968,7 +1034,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "fun r -> choose({r with x := zero}, {r with x := true})";
-  [%expect {|
+  [%expect
+    {|
     fun r -> choose({ r with x := zero }, { r with x := true })
     ERROR: unification error of
       int
