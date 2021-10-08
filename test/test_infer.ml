@@ -609,7 +609,8 @@ let%expect_test "" =
   infer "one(id)";
   [%expect {|
     one(id)
-    ERROR: expected a function
+    ERROR: expected a function but got:
+      int
     | |}]
 
 let%expect_test "" =

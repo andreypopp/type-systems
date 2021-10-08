@@ -7,7 +7,7 @@ type error =
   | Error_unification of ty * ty
   | Error_recursive_types
   | Error_recursive_row_types
-  | Error_not_a_function
+  | Error_not_a_function of ty
   | Error_unknown_name of string
   | Error_arity_mismatch of int * int
 
@@ -16,7 +16,8 @@ let doc_of_error =
     function
     | Error_recursive_types -> string "recursive types"
     | Error_recursive_row_types -> string "recursive row types"
-    | Error_not_a_function -> string "expected a function"
+    | Error_not_a_function ty ->
+      string "expected a function but got:" ^^ nest 2 (break 1 ^^ doc_of_ty ty)
     | Error_unknown_name name -> string "unknown name: " ^^ string name
     | Error_arity_mismatch (expected, got) ->
       string "arity mismatch: expected"
@@ -225,7 +226,7 @@ let rec unify_abs arity ty =
   | Ty_app _
   | Ty_const _
   | Ty_record _ ->
-    type_error Error_not_a_function
+    type_error (Error_not_a_function ty)
 
 let rec infer' lvl env (e : expr) =
   match e with
