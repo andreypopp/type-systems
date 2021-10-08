@@ -65,6 +65,16 @@ expr:
 	| FUN LPAREN args = flex_list(COMMA, IDENT) RPAREN ARROW body = expr
 	  { Expr_abs (args, body) }
 
+  (* let-fun fused *)
+	| LET n = IDENT arg = IDENT EQUALS e = expr IN b = expr
+    { Expr_let (n, Expr_abs ([arg], e), b) }
+	| LET n = IDENT LPAREN args = flex_list(COMMA, IDENT) RPAREN EQUALS e = expr IN b = expr
+    { Expr_let (n, Expr_abs (args, e), b) }
+	| LET REC n = IDENT arg = IDENT EQUALS e = expr IN b = expr
+    { Expr_let_rec (n, Expr_abs ([arg], e), b) }
+	| LET REC n = IDENT LPAREN args = flex_list(COMMA, IDENT) RPAREN EQUALS e = expr IN b = expr
+    { Expr_let_rec (n, Expr_abs (args, e), b) }
+
   (* records *)
   | LBRACE fs = flex_list(SEMI, field) RBRACE
     { Expr_record fs }
