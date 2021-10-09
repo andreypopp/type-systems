@@ -84,6 +84,7 @@ type error =
   | Error_unknown_name of string
   | Error_arity_mismatch of ty * int * int
   | Error_missing_typeclass_instance of pred
+  | Error_ambigious_predicate of pred
 
 exception Type_error of error
 
@@ -109,7 +110,9 @@ let doc_of_error =
       ^^ (break 1 ^^ string "with")
       ^^ nest 2 (break 1 ^^ doc_of_ty ty2)
     | Error_missing_typeclass_instance p ->
-      string "missing typeclass instance: " ^^ doc_of_pred p)
+      string "missing typeclass instance: " ^^ doc_of_pred p
+    | Error_ambigious_predicate p ->
+      string "ambigious predicate: " ^^ doc_of_pred p)
 
 let pp_error = pp' doc_of_error
 
@@ -218,11 +221,16 @@ end
 include Instantiate
 
 module Pred_solver : sig
-  val solve_preds : lvl -> Env.t -> pred list -> pred list * pred list
+  val solve_preds :
+    lvl ->
+    Env.t ->
+    (Ty_var_unbound.t, Ty_var_unbound.comparator_witness) Set.t ->
+    pred list ->
+    pred list * pred list
   (** Solve a set of predicates.
 
       This raises a [Type_error] in case it cannot find a suitable instance for
-      a ground predicate.
+      a ground predicate or if a predicate is ambigious.
 
       The function returns a pair of predicate sets [deferred, retained] where
       [retained] should be generalized while [deferred] should be propagated
@@ -355,60 +363,76 @@ end = struct
     let ps = to_hnfs lvl env ps in
     simplify lvl env ps
 
-  let solve_preds lvl env ps =
+  let ty_vars ((_name, args) as p) =
+    let rec inspect = function
+      | Ty_var { contents = Ty_var_unbound tv } -> tv
+      | Ty_var { contents = Ty_var_link ty } -> inspect ty
+      | _ -> failwith (Printf.sprintf "predicate not in HNF: %s" (show_pred p))
+    in
+    List.map args ~f:inspect
+
+  let solve_preds lvl env vars ps =
     let ps = reduce lvl env ps in
-    let should_defer (_name, args) =
-      let rec check = function
-        | Ty_var { contents = Ty_var_unbound { lvl = var_lvl; id = _ } } ->
-          var_lvl <= lvl
-        | Ty_var { contents = Ty_var_link ty } -> check ty
-        | _ -> (* should be in HNF really *) assert false
-      in
-      List.for_all args ~f:check
+    let should_defer p =
+      List.for_all (ty_vars p) ~f:(fun tv -> tv.lvl <= lvl)
     in
     let rec aux (deferred, retained) = function
       | [] -> (deferred, retained)
       | p :: ps ->
         if should_defer p then aux (p :: deferred, retained) ps
-        else aux (deferred, p :: retained) ps
+        else
+          let not_in_vars tv = not (Set.mem vars tv) in
+          if List.exists (ty_vars p) ~f:not_in_vars then
+            type_error (Error_ambigious_predicate p);
+          aux (deferred, p :: retained) ps
     in
-    let ps = aux ([], []) ps in
-    (* TODO: handle ambiguities *)
-    ps
+    aux ([], []) ps
 end
 
 include Pred_solver
 
 let generalize lvl env (qty : qual_ty) =
-  let rec generalize_ty ty =
-    match ty with
-    | Ty_const _ -> ty
-    | Ty_arr (ty_args, ty_ret) ->
-      Ty_arr (List.map ty_args ~f:generalize_ty, generalize_ty ty_ret)
-    | Ty_app (ty, ty_args) ->
-      Ty_app (generalize_ty ty, List.map ty_args ~f:generalize_ty)
-    | Ty_var { contents = Ty_var_link ty } -> generalize_ty ty
-    | Ty_var { contents = Ty_var_generic _ } -> ty
-    | Ty_var { contents = Ty_var_unbound { id; lvl = var_lvl } } ->
-      if var_lvl > lvl then Ty_var { contents = Ty_var_generic id } else ty
-    | Ty_record row -> Ty_record (generalize_ty_row row)
-  and generalize_ty_row (ty_row : ty_row) =
-    match ty_row with
-    | Ty_row_field (name, ty, row) ->
-      Ty_row_field (name, generalize_ty ty, generalize_ty_row row)
-    | Ty_row_empty -> ty_row
-    | Ty_row_var { contents = Ty_var_link ty_row } -> generalize_ty_row ty_row
-    | Ty_row_var { contents = Ty_var_generic _ } -> ty_row
-    | Ty_row_var { contents = Ty_var_unbound { id; lvl = var_lvl } } ->
-      if var_lvl > lvl then Ty_row_var { contents = Ty_var_generic id }
-      else ty_row
-    | Ty_row_const _ -> assert false
-  and generalize_ps ps =
-    List.map ps ~f:(fun (name, args) -> (name, List.map args ~f:generalize_ty))
+  let generalize_ty ty =
+    (* Along with generalizing the type we also find all unbound type variables
+       which we later use to check predicates for ambiguity. *)
+    let seen = ref (Set.empty (module Ty_var_unbound)) in
+    let mark id = Ref.replace seen (fun seen -> Set.add seen id) in
+    let rec generalize_ty ty =
+      match ty with
+      | Ty_const _ -> ty
+      | Ty_arr (ty_args, ty_ret) ->
+        Ty_arr (List.map ty_args ~f:generalize_ty, generalize_ty ty_ret)
+      | Ty_app (ty, ty_args) ->
+        Ty_app (generalize_ty ty, List.map ty_args ~f:generalize_ty)
+      | Ty_var { contents = Ty_var_link ty } -> generalize_ty ty
+      | Ty_var { contents = Ty_var_generic _ } -> ty
+      | Ty_var { contents = Ty_var_unbound tv } ->
+        mark tv;
+        if tv.lvl > lvl then Ty_var { contents = Ty_var_generic tv.id } else ty
+      | Ty_record row -> Ty_record (generalize_ty_row row)
+    and generalize_ty_row (ty_row : ty_row) =
+      match ty_row with
+      | Ty_row_field (name, ty, row) ->
+        Ty_row_field (name, generalize_ty ty, generalize_ty_row row)
+      | Ty_row_empty -> ty_row
+      | Ty_row_var { contents = Ty_var_link ty_row } -> generalize_ty_row ty_row
+      | Ty_row_var { contents = Ty_var_generic _ } -> ty_row
+      | Ty_row_var { contents = Ty_var_unbound { id; lvl = var_lvl } } ->
+        if var_lvl > lvl then Ty_row_var { contents = Ty_var_generic id }
+        else ty_row
+      | Ty_row_const _ -> assert false
+    in
+    let ty = generalize_ty ty in
+    (ty, !seen)
+  in
+  let generalize_pred (name, args) =
+    let args = List.map args ~f:(fun ty -> fst (generalize_ty ty)) in
+    (name, args)
   in
   let ps, ty = qty in
-  let deferred, retained = solve_preds lvl env ps in
-  (deferred @ generalize_ps retained, generalize_ty ty)
+  let ty, vars = generalize_ty ty in
+  let deferred, retained = solve_preds lvl env vars ps in
+  (deferred @ List.map retained ~f:generalize_pred, ty)
 
 let occurs_check lvl id ty =
   let rec occurs_check_ty (ty : ty) : unit =

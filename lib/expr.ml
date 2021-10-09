@@ -6,6 +6,19 @@ type lvl = int
 
 type id = int
 
+module Ty_var_unbound = struct
+  type t = { id : id; lvl : lvl }
+
+  include Comparator.Make (struct
+    type nonrec t = t
+
+    let sexp_of_t { id; lvl } =
+      Sexp.List [ Sexp.Atom (Int.to_string id); Sexp.Atom (Int.to_string lvl) ]
+
+    let compare a b = Int.compare a.id b.id
+  end)
+end
+
 type expr =
   | Expr_name of name
   | Expr_abs of name list * expr
@@ -28,7 +41,7 @@ type ty =
   | Ty_record of ty_row
 
 and 'a var =
-  | Ty_var_unbound of { id : id; lvl : int }
+  | Ty_var_unbound of Ty_var_unbound.t
   | Ty_var_link of 'a
   | Ty_var_generic of id
 

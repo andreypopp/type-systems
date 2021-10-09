@@ -12,6 +12,20 @@ let () =
       Mu.Infer.Env.add_instance env qp witness
     in
     Mu.Infer.Env.empty
+    (* Show *)
+    |> assume_typeclass "forall[a] Show(a)"
+    |> assume "show" "forall[a] Show(a) => a -> string"
+    |> assume "show_int" "int -> string"
+    |> assume_instance "Show(int)" "show_int"
+    |> assume "show_float" "float -> string"
+    |> assume_instance "Show(float)" "show_float"
+    (* Read *)
+    |> assume_typeclass "forall[a] Read(a)"
+    |> assume "read" "forall[a] Read(a) => string -> a"
+    |> assume "read_int" "string -> int"
+    |> assume_instance "Read(int)" "read_int"
+    |> assume "read_float" "string -> float"
+    |> assume_instance "Read(float)" "read_float"
     (* Eq *)
     |> assume_typeclass "forall[a] Eq(a)"
     |> assume "eq" "forall[a] Eq(a) => (a, a) -> bool"
@@ -48,7 +62,7 @@ let () =
     |> assume "one" "int"
     |> assume "zero" "int"
     |> assume "succ" "int -> int"
-    |> assume "plus" "(int, int) -> inc"
+    |> assume "plus" "(int, int) -> int"
     |> assume "eq_curry" "forall[a] a -> a -> bool"
     |> assume "not" "bool -> bool"
     |> assume "true" "bool"
