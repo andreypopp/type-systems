@@ -1,7 +1,16 @@
 open Base
 
+let assume name ty env = Mu.Infer.Env.add env name (Mu.parse_ty ty)
+
+let assume_typeclass qp env =
+  let qp = Mu.parse_qual_pred qp in
+  Mu.Infer.Env.add_typeclass env qp
+
+let assume_instance qp witness env =
+  let qp = Mu.parse_qual_pred qp in
+  Mu.Infer.Env.add_instance env qp witness
+
 let env =
-  let assume name ty env = Mu.Infer.Env.add env name (Mu.parse_ty ty) in
   Mu.Infer.Env.empty
   |> assume "head" "forall[a] list[a] -> a"
   |> assume "tail" "forall[a] list[a] -> list[a]"
@@ -34,7 +43,7 @@ let env =
   |> assume "print" "string -> string"
   |> assume "print_user" "(string,age) -> string"
 
-let infer code =
+let infer ?(env = env) code =
   Mu.Infer.reset_vars ();
   let prog = Mu.parse_expr code in
   Caml.Format.printf "%s@." (Mu.Expr.show_expr prog);
@@ -1041,4 +1050,168 @@ let%expect_test "" =
       int
     with
       bool
+    | |}]
+
+(* typeclasses *)
+
+let env =
+  env
+  (* Show *)
+  |> assume_typeclass "forall[a] Show(a)"
+  |> assume "show" "forall[a] Show(a) => a -> string"
+  |> assume "show_int" "int -> string"
+  |> assume_instance "Show(int)" "show_int"
+  |> assume "show_float" "float -> string"
+  |> assume_instance "Show(float)" "show_float"
+  (* Read *)
+  |> assume_typeclass "forall[a] Read(a)"
+  |> assume "read" "forall[a] Read(a) => string -> a"
+  |> assume "read_int" "string -> int"
+  |> assume_instance "Read(int)" "read_int"
+  |> assume "read_float" "string -> float"
+  |> assume_instance "Read(float)" "read_float"
+  (* Eq *)
+  |> assume_typeclass "forall[a] Eq(a)"
+  |> assume "eq" "forall[a] Eq(a) => (a, a) -> bool"
+  |> assume "eq_bool" "(bool, bool) -> bool"
+  |> assume_instance "Eq(bool)" "eq_bool"
+  |> assume "eq_int" "(int, int) -> bool"
+  |> assume_instance "Eq(int)" "eq_int"
+  |> assume "eq_list" "forall[a] Eq(a) => (list[a], list[a]) -> bool"
+  |> assume_instance "forall[a] Eq(a) => Eq(list[a])" "eq_list"
+  |> assume "eq_pair"
+       "forall[a, b] Eq(a), Eq(b) => (pair[a, b], list[a, b]) -> bool"
+  |> assume_instance "forall[a, b] Eq(a), Eq(b) => Eq(pair[a, b])" "eq_pair"
+  (* Ord *)
+  |> assume_typeclass "forall[a] Eq(a) => Ord(a)"
+  |> assume "compare" "forall[a] Ord(a) => (a, a) -> int"
+  |> assume "compare_bool" "(bool, bool) -> int"
+  |> assume_instance "Ord(bool)" "compare_bool"
+  |> assume "compare_int" "(int, int) -> int"
+  |> assume_instance "Ord(int)" "compare_int"
+  |> assume "compare_list" "forall[a] Ord(a) => (list[a], list[a]) -> int"
+  |> assume_instance "forall[a] Ord(a) => Ord(list[a])" "compare_list"
+  |> assume "compare_pair"
+       "forall[a, b] Ord(a), Ord(b) => (pair[a, b], list[a, b]) -> int"
+  |> assume_instance "forall[a, b] Ord(a), Ord(b) => Ord(pair[a, b])"
+       "compare_pair"
+
+let%expect_test "" =
+  infer ~env "eq";
+  [%expect {|
+    eq
+    : Eq(a) => (a, a) -> bool
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let e = eq in e";
+  [%expect {|
+    let e = eq in e
+    : Eq(a) => (a, a) -> bool
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let e (x, y) = eq(x, y) in e";
+  [%expect
+    {|
+    let e = fun (x, y) -> eq(x, y) in e
+    : Eq(a) => (a, a) -> bool
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    fun (f1, f2) ->
+      let e (x, y) = pair(eq(x, y), eq(f1, f2)) in
+      e(f1, f2)
+    |};
+  [%expect
+    {|
+    fun (f1, f2) -> let e = fun (x, y) -> pair(eq(x, y), eq(f1, f2)) in e(f1, f2)
+    : Eq(a) => (a, a) -> pair[bool, bool]
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    fun (f1, f2) ->
+      let e (x, y) = pair(eq(x, y), compare(f1, f2)) in
+      e(f1, f2)
+    |};
+  [%expect
+    {|
+    fun (f1, f2) -> let e =
+      fun (x, y) -> pair(eq(x, y), compare(f1, f2))
+    in e(f1, f2)
+    : Ord(a) => (a, a) -> pair[bool, int]
+    | |}]
+
+let%expect_test "" =
+  infer ~env {|
+    let f x = (fun x -> eq(x, x))(cons(x, nil)) in
+    f
+  |};
+  [%expect
+    {|
+    let f = fun x -> fun x -> eq(x, x)(cons(x, nil)) in f
+    : Eq(a) => a -> bool
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let f x = (fun x -> eq(x, x))(cons(x, nil)) in
+    pair(f(one), f(true))
+    |};
+  [%expect
+    {|
+    let f = fun x -> fun x -> eq(x, x)(cons(x, nil)) in pair(f(one), f(true))
+    : pair[bool, bool]
+    | |}]
+
+let%expect_test "" =
+  infer ~env "eq(world, world)";
+  [%expect
+    {|
+    eq(world, world)
+    ERROR: missing typeclass instance: Eq(string)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun x -> eq(world, x)";
+  [%expect
+    {|
+    fun x -> eq(world, x)
+    ERROR: missing typeclass instance: Eq(string)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "(fun x -> eq(cons(x, nil), nil))(world)";
+  [%expect
+    {|
+    fun x -> eq(cons(x, nil), nil)(world)
+    ERROR: missing typeclass instance: Eq(string)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "show(read(world))";
+  [%expect
+    {|
+    show(read(world))
+    ERROR: ambigious predicate: Read(_1)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "show(plus(read(world), one))";
+  [%expect {|
+    show(plus(read(world), one))
+    : string
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun x -> show(read(x))";
+  [%expect
+    {|
+    fun x -> show(read(x))
+    ERROR: ambigious predicate: Read(_2)
     | |}]
