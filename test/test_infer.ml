@@ -12,6 +12,7 @@ let assume_instance qp witness env =
 
 let env =
   Mu.Infer.Env.empty
+  |> assume "fix" "forall [a] (a -> a) -> a"
   |> assume "head" "forall[a] list[a] -> a"
   |> assume "tail" "forall[a] list[a] -> list[a]"
   |> assume "nil" "forall[a] list[a]"
@@ -1214,4 +1215,92 @@ let%expect_test "" =
     {|
     fun x -> show(read(x))
     ERROR: ambigious predicate: Read(_2)
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let rec build x =
+      cons(x, build(x))
+    in
+    build
+    |};
+  [%expect
+    {|
+    let rec build = fun x -> cons(x, build(x)) in build
+    : a -> list[a]
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let rec build x =
+      cons(x, build(x))
+    in
+    build(one)
+    |};
+  [%expect
+    {|
+    let rec build = fun x -> cons(x, build(x)) in build(one)
+    : list[int]
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let rec build x =
+      pair(x, build(x))
+    in
+    build(one)
+    |};
+  [%expect
+    {|
+    let rec build = fun x -> pair(x, build(x)) in build(one)
+    ERROR: recursive types
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let build = fix(fun next -> fun x -> pair(x, next(x))) in
+    build(one)
+    |};
+  [%expect
+    {|
+    let build = fix(fun next -> fun x -> pair(x, next(x))) in build(one)
+    ERROR: recursive types
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let build = fix(fun next -> fun (x) -> next(x)) in
+    build(one)
+    |};
+  [%expect
+    {|
+    let build = fix(fun next -> fun x -> next(x)) in build(one)
+    : a
+    | |}]
+
+let%expect_test "" =
+  infer ~env {|
+    let rec build x = build(x) in
+    build
+    |};
+  [%expect
+    {|
+    let rec build = fun x -> build(x) in build
+    : b -> a
+    | |}]
+
+let%expect_test "" =
+  infer ~env {|
+    let rec build x = build(x) in
+    build(one)
+    |};
+  [%expect
+    {|
+    let rec build = fun x -> build(x) in build(one)
+    : a
     | |}]

@@ -474,9 +474,12 @@ let rec unify (ty1 : ty) (ty2 : ty) =
     | Ty_const name1, Ty_const name2 ->
       if not String.(name1 = name2) then
         type_error (Error_unification (ty1, ty2))
-    | Ty_arr (args1, ret1), Ty_arr (args2, ret2) ->
-      List.iter2_exn args1 args2 ~f:unify;
-      unify ret1 ret2
+    | Ty_arr (args1, ret1), Ty_arr (args2, ret2) -> (
+      match List.iter2 args1 args2 ~f:unify with
+      | Unequal_lengths ->
+        type_error
+          (Error_arity_mismatch (ty1, List.length args2, List.length args1))
+      | Ok () -> unify ret1 ret2)
     | Ty_app (f1, args1), Ty_app (f2, args2) ->
       unify f1 f2;
       List.iter2_exn args1 args2 ~f:unify
@@ -594,8 +597,12 @@ let rec infer' lvl (env : Env.t) (e : expr) =
     infer' lvl env b
   | Expr_let_rec (name, e, b) ->
     let ty_e =
-      let env = Env.add env name ([], newvar lvl ()) in
-      infer' (lvl + 1) env e
+      (* fix : a . (a -> a) -> a *)
+      let ty_ret = newvar lvl () in
+      let ty_fun = Ty_arr ([ ty_ret ], ty_ret) in
+      let cs, ty_fun' = infer' (lvl + 1) env (Expr_abs ([ name ], e)) in
+      unify ty_fun' ty_fun;
+      (cs, ty_ret)
     in
     let ty_e = generalize lvl env ty_e in
     let env = Env.add env name ty_e in

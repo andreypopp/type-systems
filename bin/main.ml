@@ -59,6 +59,7 @@ let () =
     |> assume "cons_curry" "forall[a] a -> list[a] -> list[a]"
     |> assume "map" "forall[a, b] (a -> b, list[a]) -> list[b]"
     |> assume "map_curry" "forall[a, b] (a -> b) -> list[a] -> list[b]"
+    |> assume "fix" "forall [a] (a -> a) -> a"
     |> assume "one" "int"
     |> assume "zero" "int"
     |> assume "succ" "int -> int"
