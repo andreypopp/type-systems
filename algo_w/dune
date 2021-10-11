@@ -1,5 +1,5 @@
 (library
- (name mu)
+ (name algo_w)
  (preprocess (pps ppx_sexp_conv))
  (libraries base pprint nice_parser)
  )

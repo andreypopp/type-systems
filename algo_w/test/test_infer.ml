@@ -1,17 +1,17 @@
 open Base
 
-let assume name ty env = Mu.Infer.Env.add env name (Mu.parse_ty ty)
+let assume name ty env = Algo_w.Infer.Env.add env name (Algo_w.parse_ty ty)
 
 let assume_typeclass qp env =
-  let qp = Mu.parse_qual_pred qp in
-  Mu.Infer.Env.add_typeclass env qp
+  let qp = Algo_w.parse_qual_pred qp in
+  Algo_w.Infer.Env.add_typeclass env qp
 
 let assume_instance qp witness env =
-  let qp = Mu.parse_qual_pred qp in
-  Mu.Infer.Env.add_instance env qp witness
+  let qp = Algo_w.parse_qual_pred qp in
+  Algo_w.Infer.Env.add_instance env qp witness
 
 let env =
-  Mu.Infer.Env.empty
+  Algo_w.Infer.Env.empty
   |> assume "fix" "forall [a] (a -> a) -> a"
   |> assume "head" "forall[a] list[a] -> a"
   |> assume "tail" "forall[a] list[a] -> list[a]"
@@ -45,12 +45,12 @@ let env =
   |> assume "print_user" "(string,age) -> string"
 
 let infer ?(env = env) code =
-  Mu.Infer.reset_vars ();
-  let prog = Mu.parse_expr code in
-  Caml.Format.printf "%s@." (Mu.Expr.show_expr prog);
-  match Mu.infer_ty ~env prog with
-  | Ok qty -> Caml.Format.printf ": %s@.|" (Mu.Expr.show_qual_ty qty)
-  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Mu.Infer.show_error err)
+  Algo_w.Infer.reset_vars ();
+  let prog = Algo_w.parse_expr code in
+  Caml.Format.printf "%s@." (Algo_w.Expr.show_expr prog);
+  match Algo_w.infer_ty ~env prog with
+  | Ok qty -> Caml.Format.printf ": %s@.|" (Algo_w.Expr.show_qual_ty qty)
+  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Algo_w.Infer.show_error err)
 
 let%expect_test "" =
   infer "world";

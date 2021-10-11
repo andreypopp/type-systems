@@ -1,0 +1,4 @@
+(executable
+ (public_name algo_w)
+ (name main)
+ (libraries algo_w base stdio))

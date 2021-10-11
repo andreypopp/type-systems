@@ -2,16 +2,16 @@ open Base
 
 let () =
   let env =
-    let assume name ty env = Mu.Infer.Env.add env name (Mu.parse_ty ty) in
+    let assume name ty env = Algo_w.Infer.Env.add env name (Algo_w.parse_ty ty) in
     let assume_typeclass qp env =
-      let qp = Mu.parse_qual_pred qp in
-      Mu.Infer.Env.add_typeclass env qp
+      let qp = Algo_w.parse_qual_pred qp in
+      Algo_w.Infer.Env.add_typeclass env qp
     in
     let assume_instance qp witness env =
-      let qp = Mu.parse_qual_pred qp in
-      Mu.Infer.Env.add_instance env qp witness
+      let qp = Algo_w.parse_qual_pred qp in
+      Algo_w.Infer.Env.add_instance env qp witness
     in
-    Mu.Infer.Env.empty
+    Algo_w.Infer.Env.empty
     (* Show *)
     |> assume_typeclass "forall[a] Show(a)"
     |> assume "show" "forall[a] Show(a) => a -> string"
@@ -83,9 +83,9 @@ let () =
     |> assume "print" "string -> string"
     |> assume "print_user" "(string,age) -> string"
   in
-  let prog = Mu.Expr_parser.parse_chan Stdio.stdin in
-  match Mu.infer_ty ~env prog with
-  | Ok qty -> Caml.Format.printf ": %s@." (Mu.Expr.show_qual_ty qty)
+  let prog = Algo_w.Expr_parser.parse_chan Stdio.stdin in
+  match Algo_w.infer_ty ~env prog with
+  | Ok qty -> Caml.Format.printf ": %s@." (Algo_w.Expr.show_qual_ty qty)
   | Error err ->
-    Caml.Format.printf "ERROR: %s@." (Mu.Infer.show_error err);
+    Caml.Format.printf "ERROR: %s@." (Algo_w.Infer.show_error err);
     Caml.exit 1

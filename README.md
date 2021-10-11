@@ -1,4 +1,4 @@
-# mu
+# type-systems
 
 This is an experiment in designing a type system for Rel/FunSQL.
 
@@ -24,13 +24,8 @@ Extensible records are going to be used for several purposes:
    shape will be fixed at the moment of creation, although it will still be
    possible to write functions which operate on a subset of a record's fields).
 
-For dealing with overloading and type casting qualified types will be added
-(think typeclasses). We are going to support a closed set of typeclasses at the
-moment.
-
-For tracking nullability it is planned to implement a restricted form of
-subtyping. We plan to use [Simple-Sub][] so that we keep principality and type
-inference.
+For dealing with overloading and type casting qualified types typeclasses are
+used. We are going to support a closed set of typeclasses at the moment.
 
 The code is heavily based on [tomprimozic/type-systems][].
 
