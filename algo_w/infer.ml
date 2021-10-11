@@ -90,33 +90,33 @@ exception Type_error of error
 
 let type_error err = raise (Type_error err)
 
-let doc_of_error =
+let layout_error =
   PPrint.(
     function
     | Error_recursive_types -> string "recursive types"
     | Error_recursive_row_types -> string "recursive row types"
     | Error_not_a_function ty ->
-      string "expected a function but got:" ^^ nest 2 (break 1 ^^ doc_of_ty ty)
+      string "expected a function but got:" ^^ nest 2 (break 1 ^^ layout_ty ty)
     | Error_unknown_name name -> string "unknown name: " ^^ string name
     | Error_arity_mismatch (ty, expected, got) ->
       string "arity mismatch: expected "
       ^^ string (Int.to_string expected)
       ^^ string " arguments but got "
       ^^ string (Int.to_string got)
-      ^^ nest 2 (break 1 ^^ doc_of_ty ty)
+      ^^ nest 2 (break 1 ^^ layout_ty ty)
     | Error_unification (ty1, ty2) ->
       string "unification error of"
-      ^^ nest 2 (break 1 ^^ doc_of_ty ty1)
+      ^^ nest 2 (break 1 ^^ layout_ty ty1)
       ^^ (break 1 ^^ string "with")
-      ^^ nest 2 (break 1 ^^ doc_of_ty ty2)
+      ^^ nest 2 (break 1 ^^ layout_ty ty2)
     | Error_missing_typeclass_instance p ->
-      string "missing typeclass instance: " ^^ doc_of_pred p
+      string "missing typeclass instance: " ^^ layout_pred p
     | Error_ambigious_predicate p ->
-      string "ambigious predicate: " ^^ doc_of_pred p)
+      string "ambigious predicate: " ^^ layout_pred p)
 
-let pp_error = pp' doc_of_error
+let pp_error = pp' layout_error
 
-let show_error = show' doc_of_error
+let show_error = show' layout_error
 
 module Vars : sig
   val newvar : lvl -> unit -> ty

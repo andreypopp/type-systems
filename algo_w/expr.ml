@@ -71,56 +71,56 @@ let is_simple_expr = function
   | Expr_record_proj _ ->
     true
 
-let rec doc_of_expr =
+let rec layout_expr =
   let open PPrint in
   function
   | Expr_name name -> string name
   | Expr_abs ([ arg ], body) ->
-    string "fun " ^^ string arg ^^ string " -> " ^^ group (doc_of_expr body)
+    string "fun " ^^ string arg ^^ string " -> " ^^ group (layout_expr body)
   | Expr_abs (args, body) ->
     let sep = comma ^^ blank 1 in
     string "fun "
     ^^ parens (separate sep (List.map args ~f:string))
     ^^ string " -> "
-    ^^ group (doc_of_expr body)
+    ^^ group (layout_expr body)
   | Expr_app (f, args) ->
     let sep = comma ^^ blank 1 in
-    doc_of_expr f ^^ parens (separate sep (List.map args ~f:doc_of_expr))
+    layout_expr f ^^ parens (separate sep (List.map args ~f:layout_expr))
   | Expr_lit (Lit_string v) -> dquotes (string v)
   | Expr_lit (Lit_int v) -> dquotes (string (Int.to_string v))
   | Expr_let (n, e, b) ->
     surround 2 1
       (string "let " ^^ string n ^^ string " =")
-      (doc_of_expr e)
-      (string "in " ^^ doc_of_expr b)
+      (layout_expr e)
+      (string "in " ^^ layout_expr b)
   | Expr_let_rec (n, e, b) ->
     surround 2 1
       (string "let rec " ^^ string n ^^ string " =")
-      (doc_of_expr e)
-      (string "in " ^^ doc_of_expr b)
+      (layout_expr e)
+      (string "in " ^^ layout_expr b)
   | Expr_record fields ->
     let sep = string ";" ^^ blank 1 in
-    let f (n, e) = string n ^^ string " = " ^^ doc_of_expr e in
+    let f (n, e) = string n ^^ string " = " ^^ layout_expr e in
     surround 2 1 (string "{") (separate sep (List.map fields ~f)) (string "}")
   | Expr_record_proj (e, n) ->
     let head =
-      if is_simple_expr e then doc_of_expr e else parens (doc_of_expr e)
+      if is_simple_expr e then layout_expr e else parens (layout_expr e)
     in
     head ^^ string "." ^^ string n
   | Expr_record_extend (e, fields) ->
     let sep = string ";" ^^ blank 1 in
-    let f (n, e) = string n ^^ string " = " ^^ doc_of_expr e in
+    let f (n, e) = string n ^^ string " = " ^^ layout_expr e in
     surround 2 1 (string "{")
-      (doc_of_expr e ^^ string " with " ^^ separate sep (List.map fields ~f))
+      (layout_expr e ^^ string " with " ^^ separate sep (List.map fields ~f))
       (string "}")
   | Expr_record_update (e, fields) ->
     let sep = string ";" ^^ blank 1 in
-    let f (n, e) = string n ^^ string " := " ^^ doc_of_expr e in
+    let f (n, e) = string n ^^ string " := " ^^ layout_expr e in
     surround 2 1 (string "{")
-      (doc_of_expr e ^^ string " with " ^^ separate sep (List.map fields ~f))
+      (layout_expr e ^^ string " with " ^^ separate sep (List.map fields ~f))
       (string "}")
 
-let doc_of_ty ty =
+let layout_ty ty =
   let lookup_name =
     let names = Hashtbl.create (module Int) in
     let count = ref 0 in
@@ -136,65 +136,65 @@ let doc_of_ty ty =
     fun id -> Hashtbl.find_or_add names id ~default:genname
   in
   let open PPrint in
-  let rec doc_of_ty = function
+  let rec layout_ty = function
     | Ty_const name -> string name
     | Ty_arr ([ (Ty_arr _ as arg) ], ret) ->
-      parens (doc_of_ty arg) ^^ string " -> " ^^ doc_of_ty ret
-    | Ty_arr ([ arg ], ret) -> doc_of_ty arg ^^ string " -> " ^^ doc_of_ty ret
+      parens (layout_ty arg) ^^ string " -> " ^^ layout_ty ret
+    | Ty_arr ([ arg ], ret) -> layout_ty arg ^^ string " -> " ^^ layout_ty ret
     | Ty_arr (args, ret) ->
       let sep = comma ^^ blank 1 in
-      parens (separate sep (List.map args ~f:doc_of_ty))
+      parens (separate sep (List.map args ~f:layout_ty))
       ^^ string " -> "
-      ^^ doc_of_ty ret
+      ^^ layout_ty ret
     | Ty_app (f, args) ->
       let sep = comma ^^ blank 1 in
-      doc_of_ty f ^^ brackets (separate sep (List.map args ~f:doc_of_ty))
-    | Ty_var { contents } -> doc_of_ty_var doc_of_ty contents
+      layout_ty f ^^ brackets (separate sep (List.map args ~f:layout_ty))
+    | Ty_var { contents } -> layout_ty_var layout_ty contents
     | Ty_record row ->
-      let rec doc_of_ty_row = function
+      let rec layout_ty_row = function
         | Ty_row_empty -> empty
         | Ty_row_field (name, ty, row) -> (
           string name
           ^^ string ": "
-          ^^ doc_of_ty ty
+          ^^ layout_ty ty
           ^^
           match row with
           | Ty_row_empty -> string ";"
-          | row -> string "; " ^^ doc_of_ty_row row)
-        | Ty_row_var { contents } -> doc_of_ty_var doc_of_ty_row contents
+          | row -> string "; " ^^ layout_ty_row row)
+        | Ty_row_var { contents } -> layout_ty_var layout_ty_row contents
         | Ty_row_const _ -> assert false
       in
-      surround 2 1 (string "{") (doc_of_ty_row row) (string "}")
-  and doc_of_ty_var : 'a. ('a -> document) -> 'a var -> document =
-   fun doc_of_v -> function
-    | Ty_var_link v -> doc_of_v v
+      surround 2 1 (string "{") (layout_ty_row row) (string "}")
+  and layout_ty_var : 'a. ('a -> document) -> 'a var -> document =
+   fun layout_v -> function
+    | Ty_var_link v -> layout_v v
     | Ty_var_generic id -> string (lookup_name id)
     | Ty_var_unbound { id; lvl = _ } -> string ("_" ^ Int.to_string id)
   in
-  doc_of_ty ty
+  layout_ty ty
 
-let doc_of_pred (name, args) =
+let layout_pred (name, args) =
   let open PPrint in
   let sep = comma ^^ blank 1 in
-  string name ^^ parens (separate sep (List.map args ~f:doc_of_ty))
+  string name ^^ parens (separate sep (List.map args ~f:layout_ty))
 
-let doc_of_qual_ty qty =
+let layout_qual_ty qty =
   let open PPrint in
   match qty with
-  | [], ty -> doc_of_ty ty
+  | [], ty -> layout_ty ty
   | cs, ty ->
     let sep = comma ^^ blank 1 in
-    separate sep (List.map cs ~f:doc_of_pred) ^^ string " => " ^^ doc_of_ty ty
+    separate sep (List.map cs ~f:layout_pred) ^^ string " => " ^^ layout_ty ty
 
-let doc_of_qual_pred qp =
+let layout_qual_pred qp =
   let open PPrint in
   match qp with
-  | [], pred -> doc_of_pred pred
+  | [], pred -> layout_pred pred
   | cs, pred ->
     let sep = comma ^^ blank 1 in
-    separate sep (List.map cs ~f:doc_of_pred)
+    separate sep (List.map cs ~f:layout_pred)
     ^^ string " => "
-    ^^ doc_of_pred pred
+    ^^ layout_pred pred
 
 let pp' doc ppf v = PPrint.ToFormatter.pretty 1. 80 ppf (doc v)
 
@@ -205,32 +205,32 @@ let show' ?(width = 80) doc v =
 
 let print' doc v = Caml.print_endline (show' doc v)
 
-let pp_expr = pp' doc_of_expr
+let pp_expr = pp' layout_expr
 
-let show_expr = show' doc_of_expr
+let show_expr = show' layout_expr
 
-let print_expr = print' doc_of_expr
+let print_expr = print' layout_expr
 
-let pp_ty = pp' doc_of_ty
+let pp_ty = pp' layout_ty
 
-let show_ty = show' doc_of_ty
+let show_ty = show' layout_ty
 
-let print_ty = print' doc_of_ty
+let print_ty = print' layout_ty
 
-let pp_qual_ty = pp' doc_of_qual_ty
+let pp_qual_ty = pp' layout_qual_ty
 
-let show_qual_ty = show' doc_of_qual_ty
+let show_qual_ty = show' layout_qual_ty
 
-let print_qual_ty = print' doc_of_qual_ty
+let print_qual_ty = print' layout_qual_ty
 
-let pp_pred = pp' doc_of_pred
+let pp_pred = pp' layout_pred
 
-let show_pred = show' doc_of_pred
+let show_pred = show' layout_pred
 
-let print_pred = print' doc_of_pred
+let print_pred = print' layout_pred
 
-let pp_qual_pred = pp' doc_of_qual_pred
+let pp_qual_pred = pp' layout_qual_pred
 
-let show_qual_pred = show' doc_of_qual_pred
+let show_qual_pred = show' layout_qual_pred
 
-let print_qual_pred = print' doc_of_qual_pred
+let print_qual_pred = print' layout_qual_pred
