@@ -71,6 +71,25 @@ let is_simple_expr = function
   | Expr_record_proj _ ->
     true
 
+let generic_ty_vars ty =
+  let rec of_ty set = function
+    | Ty_const _ -> set
+    | Ty_arr (args, ret) -> List.fold args ~init:(of_ty set ret) ~f:of_ty
+    | Ty_app (f, args) -> List.fold args ~init:(of_ty set f) ~f:of_ty
+    | Ty_var { contents = Ty_var_link ty } -> of_ty set ty
+    | Ty_var { contents = Ty_var_unbound _ } -> set
+    | Ty_var { contents = Ty_var_generic id } -> Set.add set id
+    | Ty_record row -> of_ty_row set row
+  and of_ty_row set = function
+    | Ty_row_empty -> set
+    | Ty_row_var { contents = Ty_var_link ty_row } -> of_ty_row set ty_row
+    | Ty_row_var { contents = Ty_var_unbound _ } -> set
+    | Ty_row_var { contents = Ty_var_generic id } -> Set.add set id
+    | Ty_row_const _ -> set
+    | Ty_row_field (_, _, ty_row) -> of_ty_row set ty_row
+  in
+  of_ty (Set.empty (module Int)) ty
+
 let rec layout_expr =
   let open PPrint in
   function
@@ -120,21 +139,21 @@ let rec layout_expr =
       (layout_expr e ^^ string " with " ^^ separate sep (List.map fields ~f))
       (string "}")
 
-let layout_ty ty =
-  let lookup_name =
-    let names = Hashtbl.create (module Int) in
-    let count = ref 0 in
-    let genname () =
-      let i = !count in
-      Int.incr count;
-      let name =
-        String.make 1 (Char.of_int_exn (97 + Int.rem i 26))
-        ^ if i >= 26 then Int.to_string (i / 26) else ""
-      in
-      name
+let make_names () =
+  let names = Hashtbl.create (module Int) in
+  let count = ref 0 in
+  let genname () =
+    let i = !count in
+    Int.incr count;
+    let name =
+      String.make 1 (Char.of_int_exn (97 + Int.rem i 26))
+      ^ if i >= 26 then Int.to_string (i / 26) else ""
     in
-    fun id -> Hashtbl.find_or_add names id ~default:genname
+    name
   in
+  fun id -> Hashtbl.find_or_add names id ~default:genname
+
+let layout_ty' ~lookup_name ty =
   let open PPrint in
   let rec layout_ty = function
     | Ty_const name -> string name
@@ -173,28 +192,63 @@ let layout_ty ty =
   in
   layout_ty ty
 
-let layout_pred (name, args) =
+let layout_forall' ~lookup_name ty_vars =
+  let open PPrint in
+  if Set.is_empty ty_vars then empty
+  else
+    let layout_ty_var id = string (lookup_name id) in
+    let sep = comma ^^ blank 1 in
+    separate sep (Set.to_list ty_vars |> List.map ~f:layout_ty_var)
+    ^^ blank 1
+    ^^ dot
+    ^^ blank 1
+
+let layout_pred' ~lookup_name (name, args) =
   let open PPrint in
   let sep = comma ^^ blank 1 in
-  string name ^^ parens (separate sep (List.map args ~f:layout_ty))
+  string name
+  ^^ parens (separate sep (List.map args ~f:(layout_ty' ~lookup_name)))
+
+let layout_ty ty =
+  let lookup_name = make_names () in
+  let ty_vars = generic_ty_vars ty in
+  let open PPrint in
+  layout_forall' ~lookup_name ty_vars ^^ layout_ty' ~lookup_name ty
+
+let layout_pred p =
+  let lookup_name = make_names () in
+  layout_pred' ~lookup_name p
 
 let layout_qual_ty qty =
   let open PPrint in
+  let lookup_name = make_names () in
+  let ty_vars =
+    let ps, ty = qty in
+    let init = generic_ty_vars ty in
+    List.fold ps ~init ~f:(fun init (_, args) ->
+        List.fold args ~init ~f:(fun set ty ->
+            Set.union set (generic_ty_vars ty)))
+  in
+  layout_forall' ~lookup_name ty_vars
+  ^^
   match qty with
-  | [], ty -> layout_ty ty
+  | [], ty -> layout_ty' ~lookup_name ty
   | cs, ty ->
     let sep = comma ^^ blank 1 in
-    separate sep (List.map cs ~f:layout_pred) ^^ string " => " ^^ layout_ty ty
+    separate sep (List.map cs ~f:(layout_pred' ~lookup_name))
+    ^^ string " => "
+    ^^ layout_ty' ~lookup_name ty
 
 let layout_qual_pred qp =
+  let lookup_name = make_names () in
   let open PPrint in
   match qp with
-  | [], pred -> layout_pred pred
+  | [], pred -> layout_pred' ~lookup_name pred
   | cs, pred ->
     let sep = comma ^^ blank 1 in
-    separate sep (List.map cs ~f:layout_pred)
+    separate sep (List.map cs ~f:(layout_pred' ~lookup_name))
     ^^ string " => "
-    ^^ layout_pred pred
+    ^^ layout_pred' ~lookup_name pred
 
 let pp' doc ppf v = PPrint.ToFormatter.pretty 1. 80 ppf (doc v)
 
@@ -210,12 +264,6 @@ let pp_expr = pp' layout_expr
 let show_expr = show' layout_expr
 
 let print_expr = print' layout_expr
-
-let pp_ty = pp' layout_ty
-
-let show_ty = show' layout_ty
-
-let print_ty = print' layout_ty
 
 let pp_qual_ty = pp' layout_qual_ty
 

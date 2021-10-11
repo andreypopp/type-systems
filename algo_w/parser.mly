@@ -57,7 +57,7 @@ let build_qual_pred env (deps, p) =
 %}
 
 %token <string> IDENT
-%token FUN LET REC IN FORALL WITH
+%token FUN LET REC IN WITH
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
 %token ARROW EQUALS COMMA DOT SEMI COLON ASSIGN GTE
 %token EOF
@@ -82,10 +82,10 @@ qual_pred_eof:
 
 %inline qual_pred:
     p = pred EOF { [], p }
-	| FORALL LBRACKET vars = ident_list RBRACKET p = pred EOF {
+	| vars = ident_list DOT p = pred EOF {
     build_qual_pred (makeenv vars) ([], p)
 	  }
-	| FORALL LBRACKET vars = ident_list RBRACKET deps = flex_list(COMMA, pred) GTE p = pred EOF {
+	| vars = ident_list DOT deps = flex_list(COMMA, pred) GTE p = pred EOF {
       let env = makeenv vars in
       build_qual_pred env (deps, p)
 	  }
@@ -140,7 +140,7 @@ ident_list:
 
 qual_ty_forall:
     qt = qual_ty { qt }
-	| FORALL LBRACKET vars = ident_list RBRACKET qt = qual_ty
+	| vars = ident_list DOT qt = qual_ty
 	  { let env = makeenv vars in build_qual_ty env qt }
 
 qual_ty:

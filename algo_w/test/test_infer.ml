@@ -12,33 +12,33 @@ let assume_instance qp witness env =
 
 let env =
   Algo_w.Infer.Env.empty
-  |> assume "fix" "forall [a] (a -> a) -> a"
-  |> assume "head" "forall[a] list[a] -> a"
-  |> assume "tail" "forall[a] list[a] -> list[a]"
-  |> assume "nil" "forall[a] list[a]"
-  |> assume "cons" "forall[a] (a, list[a]) -> list[a]"
-  |> assume "cons_curry" "forall[a] a -> list[a] -> list[a]"
-  |> assume "map" "forall[a, b] (a -> b, list[a]) -> list[b]"
-  |> assume "map_curry" "forall[a, b] (a -> b) -> list[a] -> list[b]"
+  |> assume "fix" "a . (a -> a) -> a"
+  |> assume "head" "a . list[a] -> a"
+  |> assume "tail" "a . list[a] -> list[a]"
+  |> assume "nil" "a . list[a]"
+  |> assume "cons" "a . (a, list[a]) -> list[a]"
+  |> assume "cons_curry" "a . a -> list[a] -> list[a]"
+  |> assume "map" "a, b . (a -> b, list[a]) -> list[b]"
+  |> assume "map_curry" "a, b . (a -> b) -> list[a] -> list[b]"
   |> assume "one" "int"
   |> assume "zero" "int"
   |> assume "succ" "int -> int"
   |> assume "plus" "(int, int) -> int"
-  |> assume "eq" "forall[a] (a, a) -> bool"
-  |> assume "eq_curry" "forall[a] a -> a -> bool"
+  |> assume "eq" "a . (a, a) -> bool"
+  |> assume "eq_curry" "a . a -> a -> bool"
   |> assume "not" "bool -> bool"
   |> assume "true" "bool"
   |> assume "false" "bool"
-  |> assume "pair" "forall[a, b] (a, b) -> pair[a, b]"
-  |> assume "pair_curry" "forall[a, b] a -> b -> pair[a, b]"
-  |> assume "first" "forall[a, b] pair[a, b] -> a"
-  |> assume "second" "forall[a, b] pair[a, b] -> b"
-  |> assume "id" "forall[a] a -> a"
-  |> assume "const" "forall[a, b] a -> b -> a"
-  |> assume "apply" "forall[a, b] (a -> b, a) -> b"
-  |> assume "apply_curry" "forall[a, b] (a -> b) -> a -> b"
-  |> assume "choose" "forall[a] (a, a) -> a"
-  |> assume "choose_curry" "forall[a] a -> a -> a"
+  |> assume "pair" "a, b . (a, b) -> pair[a, b]"
+  |> assume "pair_curry" "a, b . a -> b -> pair[a, b]"
+  |> assume "first" "a, b . pair[a, b] -> a"
+  |> assume "second" "a, b . pair[a, b] -> b"
+  |> assume "id" "a . a -> a"
+  |> assume "const" "a, b . a -> b -> a"
+  |> assume "apply" "a, b . (a -> b, a) -> b"
+  |> assume "apply_curry" "a, b . (a -> b) -> a -> b"
+  |> assume "choose" "a . (a, a) -> a"
+  |> assume "choose_curry" "a . a -> a -> a"
   |> assume "age" "int"
   |> assume "world" "string"
   |> assume "print" "string -> string"
@@ -113,21 +113,21 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect {|
     fun x -> let y = fun z -> z in y
-    : b -> a -> a
+    : b, a . b -> a -> a
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = x in y";
   [%expect {|
     fun x -> let y = x in y
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect {|
     fun x -> let y = fun z -> x in y
-    : a -> b -> a
+    : a, b . a -> b -> a
     | |}]
 
 let%expect_test "" =
@@ -135,7 +135,7 @@ let%expect_test "" =
   [%expect
     {|
     let rec fact = fun n -> fact(print(n)) in fact(world)
-    : a
+    : a . a
     | |}]
 
 let%expect_test "" =
@@ -144,14 +144,14 @@ let%expect_test "" =
   [%expect
     {|
     let rec map = fun (f, xs) -> cons(f(head(xs)), map(f, tail(xs))) in map
-    : (b -> a, list[b]) -> list[a]
+    : a, b . (b -> a, list[b]) -> list[a]
     | |}]
 
 let%expect_test "" =
   infer "fun x -> x.username";
   [%expect {|
     fun x -> x.username
-    : { username: a; b } -> a
+    : a, b . { username: a; b } -> a
     | |}]
 
 let%expect_test "" =
@@ -187,7 +187,7 @@ let%expect_test "" =
   [%expect
     {|
     fun user -> pair(user.name, user.age)
-    : { name: a; age: b; c } -> pair[a, b]
+    : a, b, c . { name: a; age: b; c } -> pair[a, b]
     | |}]
 
 let%expect_test "" =
@@ -195,7 +195,7 @@ let%expect_test "" =
   [%expect
     {|
     fun user -> { name = user.name; age = user.age }
-    : { name: a; age: b; c } -> { age: b; name: a; }
+    : c . { name: a; age: b; c } -> { age: b; name: a; }
     | |}]
 
 let%expect_test "" =
@@ -211,7 +211,7 @@ let%expect_test "" =
   [%expect
     {|
     fun info -> { info with age = age }
-    : { a } -> { age: int; a }
+    : a . { a } -> { age: int; a }
     | |}]
 
 let%expect_test "" =
@@ -219,7 +219,7 @@ let%expect_test "" =
   [%expect
     {|
     fun info -> { info with age = age; age = world }
-    : { a } -> { age: string; age: int; a }
+    : a . { a } -> { age: string; age: int; a }
     | |}]
 
 let%expect_test "" =
@@ -230,7 +230,7 @@ let%expect_test "" =
   [%expect
     {|
     let add_age = fun x -> { x with age = age } in add_age
-    : { a } -> { age: int; a }
+    : a . { a } -> { age: int; a }
     | |}]
 
 let%expect_test "" =
@@ -295,7 +295,7 @@ let%expect_test "" =
   [%expect
     {|
     let upd_age = fun x -> { x with age := age } in upd_age
-    : { age: int; a } -> { age: int; a }
+    : a . { age: int; a } -> { age: int; a }
     | |}]
 
 let%expect_test "" =
@@ -342,7 +342,7 @@ let%expect_test "" =
   infer "id";
   [%expect {|
     id
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
@@ -370,35 +370,35 @@ let%expect_test "" =
   infer "let x = id in x";
   [%expect {|
     let x = id in x
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
   infer "let x = fun y -> y in x";
   [%expect {|
     let x = fun y -> y in x
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
   infer "fun x -> x";
   [%expect {|
     fun x -> x
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
   infer "pair";
   [%expect {|
     pair
-    : (a, b) -> pair[a, b]
+    : a, b . (a, b) -> pair[a, b]
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect {|
     fun x -> let y = fun z -> z in y
-    : b -> a -> a
+    : b, a . b -> a -> a
     | |}]
 
 let%expect_test "" =
@@ -455,7 +455,7 @@ let%expect_test "" =
   [%expect
     {|
     let f = fun (x, y) -> let a = eq(x, y) in eq(x, y) in f
-    : (a, a) -> bool
+    : a . (a, a) -> bool
     | |}]
 
 let%expect_test "" =
@@ -463,14 +463,14 @@ let%expect_test "" =
   [%expect
     {|
     let f = fun (x, y) -> let a = eq_curry(x)(y) in eq_curry(x)(y) in f
-    : (a, a) -> bool
+    : a . (a, a) -> bool
     | |}]
 
 let%expect_test "" =
   infer "id(id)";
   [%expect {|
     id(id)
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
@@ -478,7 +478,7 @@ let%expect_test "" =
   [%expect
     {|
     choose(fun (x, y) -> x, fun (x, y) -> y)
-    : (a, a) -> a
+    : a . (a, a) -> a
     | |}]
 
 let%expect_test "" =
@@ -486,7 +486,7 @@ let%expect_test "" =
   [%expect
     {|
     choose_curry(fun (x, y) -> x)(fun (x, y) -> y)
-    : (a, a) -> a
+    : a . (a, a) -> a
     | |}]
 
 let%expect_test "" =
@@ -494,21 +494,21 @@ let%expect_test "" =
   [%expect
     {|
     let x = id in let y = let z = x(id) in z in y
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
   infer "cons(id, nil)";
   [%expect {|
     cons(id, nil)
-    : list[a -> a]
+    : a . list[a -> a]
     | |}]
 
 let%expect_test "" =
   infer "cons_curry(id)(nil)";
   [%expect {|
     cons_curry(id)(nil)
-    : list[a -> a]
+    : a . list[a -> a]
     | |}]
 
 let%expect_test "" =
@@ -551,7 +551,7 @@ let%expect_test "" =
   infer "fun x -> let y = x in y";
   [%expect {|
     fun x -> let y = x in y
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
@@ -559,7 +559,7 @@ let%expect_test "" =
   [%expect
     {|
     fun x -> let y = let z = x(fun x -> x) in z in y
-    : ((b -> b) -> a) -> a
+    : a, b . ((b -> b) -> a) -> a
     | |}]
 
 let%expect_test "" =
@@ -567,7 +567,7 @@ let%expect_test "" =
   [%expect
     {|
     fun x -> fun y -> let x = x(y) in x(y)
-    : (b -> b -> a) -> b -> a
+    : a, b . (b -> b -> a) -> b -> a
     | |}]
 
 let%expect_test "" =
@@ -575,14 +575,14 @@ let%expect_test "" =
   [%expect
     {|
     fun x -> let y = fun z -> x(z) in y
-    : (b -> a) -> b -> a
+    : a, b . (b -> a) -> b -> a
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect {|
     fun x -> let y = fun z -> x in y
-    : a -> b -> a
+    : a, b . a -> b -> a
     | |}]
 
 let%expect_test "" =
@@ -590,7 +590,7 @@ let%expect_test "" =
   [%expect
     {|
     fun x -> fun y -> let x = x(y) in fun x -> y(x)
-    : ((b -> a) -> c) -> (b -> a) -> b -> a
+    : c, a, b . ((b -> a) -> c) -> (b -> a) -> b -> a
     | |}]
 
 let%expect_test "" =
@@ -606,7 +606,7 @@ let%expect_test "" =
   [%expect
     {|
     fun x -> let y = fun z -> z in y(y)
-    : b -> a -> a
+    : b, a . b -> a -> a
     | |}]
 
 let%expect_test "" =
@@ -630,7 +630,7 @@ let%expect_test "" =
   [%expect
     {|
     fun f -> let x = fun (g, y) -> let _ = g(y) in eq(f, g) in x
-    : (b -> a) -> (b -> a, b) -> bool
+    : a, b . (b -> a) -> (b -> a, b) -> bool
     | |}]
 
 let%expect_test "" =
@@ -638,7 +638,7 @@ let%expect_test "" =
   [%expect
     {|
     let const = fun x -> fun y -> x in const
-    : a -> b -> a
+    : a, b . a -> b -> a
     | |}]
 
 let%expect_test "" =
@@ -646,7 +646,7 @@ let%expect_test "" =
   [%expect
     {|
     let apply = fun (f, x) -> f(x) in apply
-    : (b -> a, b) -> a
+    : a, b . (b -> a, b) -> a
     | |}]
 
 let%expect_test "" =
@@ -654,7 +654,7 @@ let%expect_test "" =
   [%expect
     {|
     let apply_curry = fun f -> fun x -> f(x) in apply_curry
-    : (b -> a) -> b -> a
+    : a, b . (b -> a) -> b -> a
     | |}]
 
 (* TESTS FROM type-systems repo: records *)
@@ -743,7 +743,7 @@ let%expect_test "" =
   [%expect
     {|
     let r = { a = id; b = fun x -> x } in choose(r.a, r.b)
-    : a -> a
+    : a . a -> a
     | |}]
 
 let%expect_test "" =
@@ -838,7 +838,7 @@ let%expect_test "" =
   [%expect
     {|
     fun r -> { r with x = one }
-    : { a } -> { x: int; a }
+    : a . { a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
@@ -846,7 +846,7 @@ let%expect_test "" =
   [%expect
     {|
     fun r -> { r with x := one }
-    : { x: int; a } -> { x: int; a }
+    : a . { x: int; a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
@@ -888,7 +888,7 @@ let%expect_test "" =
   infer "fun r -> r.x";
   [%expect {|
     fun r -> r.x
-    : { x: a; b } -> a
+    : a, b . { x: a; b } -> a
     | |}]
 
 let%expect_test "" =
@@ -947,7 +947,7 @@ let%expect_test "" =
   [%expect
     {|
     fun r -> choose({ r with x = zero }, { r with x = one })
-    : { a } -> { x: int; a }
+    : a . { a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
@@ -955,7 +955,7 @@ let%expect_test "" =
   [%expect
     {|
     fun r -> choose({ r with x := zero }, { r with x := one })
-    : { x: int; a } -> { x: int; a }
+    : a . { x: int; a } -> { x: int; a }
     | |}]
 
 let%expect_test "" =
@@ -971,7 +971,7 @@ let%expect_test "" =
   [%expect
     {|
     fun r -> choose({ r with x := zero }, { r with y := one })
-    : { x: int; y: int; a } -> { x: int; y: int; a }
+    : a . { x: int; y: int; a } -> { x: int; y: int; a }
     | |}]
 
 let%expect_test "" =
@@ -1058,57 +1058,57 @@ let%expect_test "" =
 let env =
   env
   (* Show *)
-  |> assume_typeclass "forall[a] Show(a)"
-  |> assume "show" "forall[a] Show(a) => a -> string"
+  |> assume_typeclass "a . Show(a)"
+  |> assume "show" "a . Show(a) => a -> string"
   |> assume "show_int" "int -> string"
   |> assume_instance "Show(int)" "show_int"
   |> assume "show_float" "float -> string"
   |> assume_instance "Show(float)" "show_float"
   (* Read *)
-  |> assume_typeclass "forall[a] Read(a)"
-  |> assume "read" "forall[a] Read(a) => string -> a"
+  |> assume_typeclass "a . Read(a)"
+  |> assume "read" "a . Read(a) => string -> a"
   |> assume "read_int" "string -> int"
   |> assume_instance "Read(int)" "read_int"
   |> assume "read_float" "string -> float"
   |> assume_instance "Read(float)" "read_float"
   (* Eq *)
-  |> assume_typeclass "forall[a] Eq(a)"
-  |> assume "eq" "forall[a] Eq(a) => (a, a) -> bool"
+  |> assume_typeclass "a . Eq(a)"
+  |> assume "eq" "a . Eq(a) => (a, a) -> bool"
   |> assume "eq_bool" "(bool, bool) -> bool"
   |> assume_instance "Eq(bool)" "eq_bool"
   |> assume "eq_int" "(int, int) -> bool"
   |> assume_instance "Eq(int)" "eq_int"
-  |> assume "eq_list" "forall[a] Eq(a) => (list[a], list[a]) -> bool"
-  |> assume_instance "forall[a] Eq(a) => Eq(list[a])" "eq_list"
+  |> assume "eq_list" "a . Eq(a) => (list[a], list[a]) -> bool"
+  |> assume_instance "a . Eq(a) => Eq(list[a])" "eq_list"
   |> assume "eq_pair"
-       "forall[a, b] Eq(a), Eq(b) => (pair[a, b], list[a, b]) -> bool"
-  |> assume_instance "forall[a, b] Eq(a), Eq(b) => Eq(pair[a, b])" "eq_pair"
+       "a, b . Eq(a), Eq(b) => (pair[a, b], list[a, b]) -> bool"
+  |> assume_instance "a, b . Eq(a), Eq(b) => Eq(pair[a, b])" "eq_pair"
   (* Ord *)
-  |> assume_typeclass "forall[a] Eq(a) => Ord(a)"
-  |> assume "compare" "forall[a] Ord(a) => (a, a) -> int"
+  |> assume_typeclass "a . Eq(a) => Ord(a)"
+  |> assume "compare" "a . Ord(a) => (a, a) -> int"
   |> assume "compare_bool" "(bool, bool) -> int"
   |> assume_instance "Ord(bool)" "compare_bool"
   |> assume "compare_int" "(int, int) -> int"
   |> assume_instance "Ord(int)" "compare_int"
-  |> assume "compare_list" "forall[a] Ord(a) => (list[a], list[a]) -> int"
-  |> assume_instance "forall[a] Ord(a) => Ord(list[a])" "compare_list"
+  |> assume "compare_list" "a . Ord(a) => (list[a], list[a]) -> int"
+  |> assume_instance "a . Ord(a) => Ord(list[a])" "compare_list"
   |> assume "compare_pair"
-       "forall[a, b] Ord(a), Ord(b) => (pair[a, b], list[a, b]) -> int"
-  |> assume_instance "forall[a, b] Ord(a), Ord(b) => Ord(pair[a, b])"
+       "a, b . Ord(a), Ord(b) => (pair[a, b], list[a, b]) -> int"
+  |> assume_instance "a, b . Ord(a), Ord(b) => Ord(pair[a, b])"
        "compare_pair"
 
 let%expect_test "" =
   infer ~env "eq";
   [%expect {|
     eq
-    : Eq(a) => (a, a) -> bool
+    : a . Eq(a) => (a, a) -> bool
     | |}]
 
 let%expect_test "" =
   infer ~env "let e = eq in e";
   [%expect {|
     let e = eq in e
-    : Eq(a) => (a, a) -> bool
+    : a . Eq(a) => (a, a) -> bool
     | |}]
 
 let%expect_test "" =
@@ -1116,7 +1116,7 @@ let%expect_test "" =
   [%expect
     {|
     let e = fun (x, y) -> eq(x, y) in e
-    : Eq(a) => (a, a) -> bool
+    : a . Eq(a) => (a, a) -> bool
     | |}]
 
 let%expect_test "" =
@@ -1129,7 +1129,7 @@ let%expect_test "" =
   [%expect
     {|
     fun (f1, f2) -> let e = fun (x, y) -> pair(eq(x, y), eq(f1, f2)) in e(f1, f2)
-    : Eq(a) => (a, a) -> pair[bool, bool]
+    : a . Eq(a) => (a, a) -> pair[bool, bool]
     | |}]
 
 let%expect_test "" =
@@ -1144,7 +1144,7 @@ let%expect_test "" =
     fun (f1, f2) -> let e =
       fun (x, y) -> pair(eq(x, y), compare(f1, f2))
     in e(f1, f2)
-    : Ord(a) => (a, a) -> pair[bool, int]
+    : a . Ord(a) => (a, a) -> pair[bool, int]
     | |}]
 
 let%expect_test "" =
@@ -1155,7 +1155,7 @@ let%expect_test "" =
   [%expect
     {|
     let f = fun x -> fun x -> eq(x, x)(cons(x, nil)) in f
-    : Eq(a) => a -> bool
+    : a . Eq(a) => a -> bool
     | |}]
 
 let%expect_test "" =
@@ -1228,7 +1228,7 @@ let%expect_test "" =
   [%expect
     {|
     let rec build = fun x -> cons(x, build(x)) in build
-    : a -> list[a]
+    : a . a -> list[a]
     | |}]
 
 let%expect_test "" =
@@ -1280,7 +1280,7 @@ let%expect_test "" =
   [%expect
     {|
     let build = fix(fun next -> fun x -> next(x)) in build(one)
-    : a
+    : a . a
     | |}]
 
 let%expect_test "" =
@@ -1291,7 +1291,7 @@ let%expect_test "" =
   [%expect
     {|
     let rec build = fun x -> build(x) in build
-    : b -> a
+    : a, b . b -> a
     | |}]
 
 let%expect_test "" =
@@ -1302,5 +1302,5 @@ let%expect_test "" =
   [%expect
     {|
     let rec build = fun x -> build(x) in build(one)
-    : a
+    : a . a
     | |}]

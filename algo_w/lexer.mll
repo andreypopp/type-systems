@@ -16,7 +16,6 @@ rule token = parse
 	| "let"                 { LET }
 	| "rec"                 { REC }
 	| "in"                  { IN }
-	| "forall"              { FORALL }
 	| "with"                { WITH }
 	| ident                 { IDENT (Lexing.lexeme lexbuf) }
 	| '('     { LPAREN }
@@ -44,7 +43,6 @@ let string_of_token = function
 	| LET -> "let"
 	| REC -> "rec"
 	| IN -> "in"
-	| FORALL -> "forall"
 	| WITH -> "forall"
 	| IDENT ident -> ident
 	| LPAREN -> "("
