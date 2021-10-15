@@ -5,6 +5,14 @@
 
 - `hmx` - HM(X) with X being =
 
+# Development
+
+```
+make init
+make build
+make test
+```
+
 # References
 
 - https://en.wikipedia.org/wiki/Hindley–Milner_type_system
