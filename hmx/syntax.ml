@@ -10,12 +10,12 @@ type expr =
   | E_var of name
   | E_abs of name list * expr
   | E_app of expr * expr list
-  | E_let of name * expr * expr
+  | E_let of (name * expr * ty_sch option ref) * expr
   | E_lit of lit
 
 and lit = Lit_string of string | Lit_int of int [@@deriving sexp_of]
 
-type ty =
+and ty =
   | Ty_const of name
   | Ty_var of var
   | Ty_app of ty * ty list
@@ -27,12 +27,18 @@ and con =
   | C_eq of ty * ty
   | C_and of con list
   | C_exists of var list * con
-  | C_let of (name * ty_sch) list * con
+  | C_let of (name * ty_sch * ty_sch option ref) list * con
   | C_inst of name * ty
 
 and var = var_data Union_find.t
 
-and var_data = { id : int; mutable ty : ty option; mutable lvl : lvl option }
+and var_data = {
+  id : int;
+  mutable lvl : lvl option;
+      (** Levels are assigned when we enter [C_exists] or [C_let] constraints *)
+  mutable ty : ty option;
+      (** Types are discovered as a result of unification. *)
+}
 
 and cty = con * ty
 
@@ -84,7 +90,7 @@ struct
   let layout = S.layout
 
   let show v =
-    let width = 80 in
+    let width = 60 in
     let buf = Buffer.create 100 in
     PPrint.ToBuffer.pretty 1. width buf (S.layout v);
     Buffer.contents buf
@@ -94,7 +100,7 @@ struct
     | Some label -> Caml.print_endline (label ^ ": " ^ show v)
     | None -> Caml.print_endline (show v)
 
-  let pp ppf v = PPrint.ToFormatter.pretty 1. 80 ppf (S.layout v)
+  let pp ppf v = PPrint.ToFormatter.pretty 1. 60 ppf (S.layout v)
 
   let dump ?label v =
     let s = S.sexp_of_t v in
@@ -115,7 +121,9 @@ let rec layout_con_var' ~names v =
   | Some ty -> layout_ty' ~names ty
   | None -> (
     match Names.lookup names v.id with
-    | Some name -> string name
+    | Some name ->
+      if Debug.log_levels then string name ^^ parens (layout_var v)
+      else string name
     | None -> layout_var v)
 
 and layout_ty' ~names ty =
@@ -173,12 +181,12 @@ let rec layout_con' ~names c =
     ^^ dot
     ^^ parens (layout_con' ~names c)
   | C_let (bindings, c) ->
-    let layut_binding (name, ty_sch) =
-      string name ^^ string " : " ^^ layout_ty_sch ty_sch
+    let layout_binding (name, ty_sch, _) =
+      string name ^^ string " : " ^^ layout_ty_sch' ~names ty_sch
     in
     let sep = comma ^^ blank 1 in
     string "let "
-    ^^ separate sep (List.map bindings ~f:layut_binding)
+    ^^ separate sep (List.map bindings ~f:layout_binding)
     ^^ string " in "
     ^^ layout_con' ~names c
   | C_inst (name, ty) -> string name ^^ string " ≲ " ^^ layout_ty' ~names ty
@@ -189,9 +197,8 @@ and layout_cty' ~names cty =
   | C_trivial, ty -> layout_ty' ~names ty
   | c, ty -> layout_con' ~names c ^^ string " => " ^^ layout_ty' ~names ty
 
-and layout_ty_sch ty_sch =
+and layout_ty_sch' ~names ty_sch =
   let open PPrint in
-  let names = Names.make () in
   match ty_sch with
   | [], cty -> layout_cty' ~names cty
   | vs, cty ->
@@ -203,6 +210,74 @@ and layout_ty_sch ty_sch =
     in
     separate sep vars ^^ string " . " ^^ layout_cty' ~names cty
 
+and layout_expr' ~names =
+  let open PPrint in
+  function
+  | E_var name -> string name
+  | E_abs (args, body) ->
+    let sep = comma ^^ blank 1 in
+    let newline =
+      (* Always break on let inside the body. *)
+      match body with
+      | E_let _ -> hardline
+      | _ -> break 1
+    in
+    let args =
+      match args with
+      | [ arg ] -> string arg
+      | args -> parens (separate sep (List.map args ~f:string))
+    in
+    group
+      (group (string "fun " ^^ args ^^ string " ->")
+      ^^ nest 2 (group (newline ^^ group (layout_expr' ~names body))))
+  | E_app (f, args) ->
+    let sep = comma ^^ blank 1 in
+    layout_expr' ~names f
+    ^^ parens (separate sep (List.map args ~f:(layout_expr' ~names)))
+  | E_let _ as e ->
+    let es =
+      (* We do not want to print multiple nested let-expression with indents and
+         therefore we linearize them first and print on the same indent instead. *)
+      let rec linearize es e =
+        match e with
+        | E_let (_, b) -> linearize (e :: es) b
+        | e -> e :: es
+      in
+      List.rev (linearize [] e)
+    in
+    let newline =
+      (* If there's more than a single let-expression found (checking length > 2
+         because es containts the body of the last let-expression too) we split
+         them with a hardline. *)
+      if List.length es > 2 then hardline else break 1
+    in
+    concat
+      (List.map es ~f:(function
+        | E_let ((name, expr, ty_sch), _) ->
+          let ascription =
+            (* We need to layout ty_sch first as it will allocate names for use
+               down the road. *)
+            match ty_sch.contents with
+            | None -> empty
+            | Some ty_sch -> string " : " ^^ layout_ty_sch' ~names ty_sch
+          in
+          let expr_newline =
+            (* If there's [let x = let y = ... in ... in ...] then we want to
+               force break. *)
+            match expr with
+            | E_let _ -> hardline
+            | _ -> break 1
+          in
+          group
+            (group (string "let " ^^ string name ^^ ascription ^^ string " =")
+            ^^ nest 2 (expr_newline ^^ layout_expr' ~names expr)
+            ^^ expr_newline
+            ^^ string "in")
+          ^^ newline
+        | e -> layout_expr' ~names e))
+  | E_lit (Lit_string v) -> dquotes (string v)
+  | E_lit (Lit_int v) -> dquotes (string (Int.to_string v))
+
 module Expr = struct
   type t = expr
 
@@ -211,30 +286,9 @@ module Expr = struct
 
     let sexp_of_t = sexp_of_expr
 
-    let rec layout =
-      let open PPrint in
-      function
-      | E_var name -> string name
-      | E_abs ([ arg ], body) ->
-        string "fun " ^^ string arg ^^ string " -> " ^^ group (layout body)
-      | E_abs (args, body) ->
-        let sep = comma ^^ blank 1 in
-        string "fun "
-        ^^ parens (separate sep (List.map args ~f:string))
-        ^^ string " -> "
-        ^^ group (layout body)
-      | E_app (f, args) ->
-        let sep = comma ^^ blank 1 in
-        layout f ^^ parens (separate sep (List.map args ~f:layout))
-      | E_let (name, e, b) ->
-        string "let "
-        ^^ string name
-        ^^ string " = "
-        ^^ layout e
-        ^^ string " in "
-        ^^ layout b
-      | E_lit (Lit_string v) -> dquotes (string v)
-      | E_lit (Lit_int v) -> dquotes (string (Int.to_string v))
+    let layout e =
+      let names = Names.make () in
+      layout_expr' ~names e
   end)
 end
 
@@ -277,6 +331,11 @@ module C = struct
       | C_exists (tys', c) -> C_exists (tys @ tys', c)
       | c -> C_exists (tys, c))
 
+  let let_in bindings c =
+    match bindings with
+    | [] -> c
+    | bindings -> C_let (bindings, c)
+
   let ( &~ ) x y =
     match (x, y) with
     | c, C_trivial -> c
@@ -285,17 +344,6 @@ module C = struct
     | C_and xs, x -> C_and (x :: xs)
     | x, C_and xs -> C_and (x :: xs)
     | x, y -> C_and [ x; y ]
-
-  let let_in bindings c =
-    match bindings with
-    | [] -> c
-    | bindings ->
-      (* let cs = *)
-      (*   List.fold bindings ~init:trivial ~f:(fun c (_, ty_sch) -> *)
-      (*       let vs, (c', _) = ty_sch in *)
-      (*       exists vs c' &~ c) *)
-      (* in *)
-      C_let (bindings, c)
 
   include Showable (struct
     type t = con
@@ -330,6 +378,8 @@ module Ty_sch = struct
 
     let sexp_of_t = sexp_of_ty_sch
 
-    let layout = layout_ty_sch
+    let layout =
+      let names = Names.make () in
+      layout_ty_sch' ~names
   end)
 end

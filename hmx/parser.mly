@@ -51,7 +51,7 @@ expr:
 	  e = simple_expr     { e }
 
 	(* let-bindings *)
-	| LET n = IDENT EQUALS e = expr IN b = expr     { E_let (n, e, b) }
+	| LET n = IDENT EQUALS e = expr IN b = expr     { E_let ((n, e, ref None), b) }
 
 	(* functions *)
   | FUN arg = IDENT ARROW body = expr
@@ -60,9 +60,9 @@ expr:
     { E_abs (args, body) }
 
 	| LET n = IDENT arg = IDENT EQUALS e = expr IN b = expr
-    { E_let (n, E_abs ([arg], e), b) }
+    { E_let ((n, E_abs ([arg], e), ref None), b) }
 	| LET n = IDENT LPAREN args = flex_list(COMMA, IDENT) RPAREN EQUALS e = expr IN b = expr
-    { E_let (n, E_abs (args, e), b) }
+    { E_let ((n, E_abs (args, e), ref None), b) }
 
 simple_expr:
 	  n = IDENT              { E_var n }

@@ -2,36 +2,42 @@ open! Base
 open Syntax
 
 (** Constraints generation. *)
-let rec generate e ty : con =
+let rec generate e ty : con * expr =
   match e with
-  | E_lit (Lit_int _) -> C.(ty =~ Ty_const "int")
-  | E_lit (Lit_string _) -> C.(ty =~ Ty_const "string")
-  | E_var name -> C.inst name ty
+  | E_lit (Lit_int _) -> (C.(ty =~ Ty_const "int"), e)
+  | E_lit (Lit_string _) -> (C.(ty =~ Ty_const "string"), e)
+  | E_var name -> (C.inst name ty, e)
   | E_app (f, args) ->
-    let vs, atys, cs =
-      List.fold args ~init:([], [], C.trivial) ~f:(fun (vs, atys, cs) arg ->
+    let vs, atys, cs, args =
+      List.fold args ~init:([], [], C.trivial, [])
+        ~f:(fun (vs, atys, cs, args) arg ->
           let v = C.fresh_var () in
-          (v :: vs, Ty.var v :: atys, C.(cs &~ generate arg (Ty.var v))))
+          let c, arg = generate arg (Ty.var v) in
+          (v :: vs, Ty.var v :: atys, C.(c &~ cs), arg :: args))
     in
-    C.(exists vs (generate f Ty.(arr (List.rev atys) ty) &~ cs))
+    let c, f = generate f Ty.(arr (List.rev atys) ty) in
+    (C.(exists vs (c &~ cs)), E_app (f, List.rev args))
   | E_abs (args, b) ->
     let vs, bindings, atys =
       List.fold args ~init:([], [], []) ~f:(fun (vs, bindings, atys) arg ->
           let v = C.fresh_var () in
           let ty_sch = ([], (C.trivial, Ty.var v)) in
-          (v :: vs, (arg, ty_sch) :: bindings, Ty.var v :: atys))
+          (v :: vs, (arg, ty_sch, ref None) :: bindings, Ty.var v :: atys))
     in
     let v = C.fresh_var () in
-    C.(
-      exists (v :: vs)
-        (let_in (List.rev bindings) (generate b (Ty.var v))
-        &~ (Ty.arr (List.rev atys) (Ty.var v) =~ ty)))
-  | E_let (name, e, b) ->
+    let c, b = generate b (Ty.var v) in
+    ( C.(
+        exists (v :: vs)
+          (let_in (List.rev bindings) c
+          &~ (Ty.arr (List.rev atys) (Ty.var v) =~ ty))),
+      E_abs (args, b) )
+  | E_let ((name, e, _), b) ->
     let v = C.fresh_var () in
-    C.(
-      let_in
-        [ (name, ([ v ], (generate e (Ty.var v), Ty.var v))) ]
-        (generate b ty))
+    let out = ref None in
+    let ce, e = generate e (Ty.var v) in
+    let cb, b = generate b ty in
+    ( C.(let_in [ (name, ([ v ], (ce, Ty.var v)), out) ] cb),
+      E_let ((name, e, out), b) )
 
 module Error = struct
   type t =
@@ -208,8 +214,8 @@ let instantiate lvl (ty_sch : ty_sch) =
         C_exists (vs, instantiate_con c)
       | C_let (bindings, c) ->
         let bindings =
-          List.map bindings ~f:(fun (name, (vs, cty)) ->
-              (name, (vs, instantiate_cty cty)))
+          List.map bindings ~f:(fun (name, (vs, cty), out) ->
+              (name, (vs, instantiate_cty cty), out))
         in
         C_let (bindings, instantiate_con c)
       | C_inst (name, ty) -> C_inst (name, instantiate_ty ty)
@@ -311,11 +317,12 @@ let rec solve lvl env c =
     | c -> C_exists (simpl_vars vs, c))
   | C_let (bindings, c) ->
     let env =
-      List.fold bindings ~init:env ~f:(fun env (name, ty_sch) ->
+      List.fold bindings ~init:env ~f:(fun env (name, ty_sch, out) ->
           let vs, (c', ty) = ty_sch in
           List.iter vs ~f:(Var.set_level (lvl + 1));
           let c' = solve (lvl + 1) env c' in
           let ty_sch = generalize lvl (c', ty) in
+          out.contents <- Some ty_sch;
           Env.add env name ty_sch)
     in
     solve lvl env c
@@ -329,13 +336,23 @@ let rec solve lvl env c =
     unify ty ty';
     solve lvl env c'
 
-let infer ~env e =
+(** [infer ~env e] infers the type scheme for expression [e].
+
+    It returns either an [Ok (ty_sch, elaborated)] where [ty_sch] is the type
+    scheme inferred and [elaborated] is an elaborated expression corresponding
+    to [e].
+
+    ... or in case of an error it returns [Error err].
+    *)
+let infer ~env e : (ty_sch * expr, Error.t) Result.t =
   (* To infer an expression type we first generate constraints *)
   let v = C.fresh_var () in
-  let c = C.exists [ v ] (generate e (Ty.var v)) in
+  let c, e = generate e (Ty.var v) in
+  let c = C.exists [ v ] c in
   try
     (* and then solve them and generaralize!. *)
     let c = solve 0 env c in
-    Ok (generalize (-1) (c, Ty.var v))
+    let ty_sch = generalize (-1) (c, Ty.var v) in
+    Ok (ty_sch, E_let (("_", e, ref (Some ty_sch)), E_var "_"))
   with
   | Type_error error -> Error error

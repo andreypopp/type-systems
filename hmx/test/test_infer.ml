@@ -37,286 +37,357 @@ let env =
 let infer ?(env = env) code =
   Id.reset ();
   let prog = Expr.parse_string code in
-  Caml.Format.printf "%s@." (Expr.show prog);
   match infer ~env prog with
-  | Ok ty_sch -> Caml.Format.printf ": %s@.|" (Ty_sch.show ty_sch)
+  | Ok (_ty_sch, e) -> Caml.Format.printf "%s@.|" (Expr.show e)
   | Error err -> Caml.Format.printf "ERROR: %s@.|" (Error.show err)
 
 let%expect_test "" =
   infer "world";
   [%expect {|
-    world
-    : string
+    let _ : string = world in
+    _
     | |}]
 
 let%expect_test "" =
   infer "print";
   [%expect {|
-    print
-    : string -> string
+    let _ : string -> string = print in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let x = world in x";
   [%expect {|
-    let x = world in x
-    : string
+    let _ : string =
+      let x : string = world in
+      x
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun () -> world";
   [%expect {|
-    fun () -> world
-    : () -> string
+    let _ : () -> string = fun () -> world in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let x = fun () -> world in world";
   [%expect {|
-    let x = fun () -> world in world
-    : string
+    let _ : string =
+      let x : () -> string = fun () -> world in
+      world
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let x = fun () -> world in x";
   [%expect {|
-    let x = fun () -> world in x
-    : () -> string
+    let _ : () -> string =
+      let x : () -> string = fun () -> world in
+      x
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "print(world)";
   [%expect {|
-    print(world)
-    : string
+    let _ : string = print(world) in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let hello = fun msg -> print(msg) in hello(world)";
   [%expect
     {|
-    let hello = fun msg -> print(msg) in hello(world)
-    : string
+    let _ : string =
+      let hello : string -> string = fun msg -> print(msg) in
+      hello(world)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect
     {|
-    fun x -> let y = fun z -> z in y
-    : a, b . b -> a -> a
+    let _ : a, b . b -> a -> a =
+      fun x ->
+        let y : c . c -> c = fun z -> z in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = x in y";
   [%expect {|
-    fun x -> let y = x in y
-    : a . a -> a
+    let _ : a . a -> a =
+      fun x ->
+        let y : a = x in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect
     {|
-    fun x -> let y = fun z -> x in y
-    : a, b . a -> b -> a
+    let _ : a, b . a -> b -> a =
+      fun x ->
+        let y : c . c -> a = fun z -> x in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "id";
   [%expect {|
-    id
-    : a . a -> a
+    let _ : a . a -> a = id in
+    _
     | |}]
 
 let%expect_test "" =
   infer "one";
   [%expect {|
-    one
-    : int
+    let _ : int = one in
+    _
     | |}]
 
 let%expect_test "" =
   infer "x";
   [%expect {|
-    x
     ERROR: unknown name: x
     | |}]
 
 let%expect_test "" =
   infer "let x = x in x";
   [%expect {|
-    let x = x in x
     ERROR: unknown name: x
     | |}]
 
 let%expect_test "" =
   infer "let x = id in x";
   [%expect {|
-    let x = id in x
-    : a . a -> a
+    let _ : a . a -> a =
+      let x : b . b -> b = id in
+      x
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let x = fun y -> y in x";
   [%expect {|
-    let x = fun y -> y in x
-    : a . a -> a
+    let _ : a . a -> a =
+      let x : b . b -> b = fun y -> y in
+      x
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> x";
   [%expect {|
-    fun x -> x
-    : a . a -> a
+    let _ : a . a -> a = fun x -> x in
+    _
     | |}]
 
 let%expect_test "" =
   infer "pair";
   [%expect {|
-    pair
-    : a, b . (a, b) -> pair[a, b]
+    let _ : a, b . (a, b) -> pair[a, b] = pair in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect
     {|
-    fun x -> let y = fun z -> z in y
-    : a, b . b -> a -> a
+    let _ : a, b . b -> a -> a =
+      fun x ->
+        let y : c . c -> c = fun z -> z in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun x -> x in let id = fun y -> y in eq(f, id)";
   [%expect
     {|
-    let f = fun x -> x in let id = fun y -> y in eq(f, id)
-    : bool
+    let _ : bool =
+      let f : a . a -> a = fun x -> x in
+      let id : b . b -> b = fun y -> y in
+      eq(f, id)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun x -> x in let id = fun y -> y in eq_curry(f)(id)";
   [%expect
     {|
-    let f = fun x -> x in let id = fun y -> y in eq_curry(f)(id)
-    : bool
+    let _ : bool =
+      let f : a . a -> a = fun x -> x in
+      let id : b . b -> b = fun y -> y in
+      eq_curry(f)(id)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun x -> x in eq(f, succ)";
   [%expect {|
-    let f = fun x -> x in eq(f, succ)
-    : bool
+    let _ : bool =
+      let f : a . a -> a = fun x -> x in
+      eq(f, succ)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun x -> x in eq_curry(f)(succ)";
   [%expect {|
-    let f = fun x -> x in eq_curry(f)(succ)
-    : bool
+    let _ : bool =
+      let f : a . a -> a = fun x -> x in
+      eq_curry(f)(succ)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun x -> x in pair(f(one), f(true))";
   [%expect
     {|
-    let f = fun x -> x in pair(f(one), f(true))
-    : pair[int, bool]
+    let _ : pair[int, bool] =
+      let f : a . a -> a = fun x -> x in
+      pair(f(one), f(true))
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun f -> pair(f(one), f(true))";
   [%expect
     {|
-    fun f -> pair(f(one), f(true))
     ERROR: incompatible types:
-      int
-    and
       bool
+    and
+      int
     | |}]
 
 let%expect_test "" =
   infer "let f = fun (x, y) -> let a = eq(x, y) in eq(x, y) in f";
   [%expect
     {|
-    let f = fun (x, y) -> let a = eq(x, y) in eq(x, y) in f
-    : a . (a, a) -> bool
+    let _ : a . (a, a) -> bool =
+      let f : b . (b, b) -> bool =
+        fun (x, y) ->
+          let a : bool = eq(x, y) in eq(x, y)
+      in
+      f
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let f = fun (x, y) -> let a = eq_curry(x)(y) in eq_curry(x)(y) in f";
   [%expect
     {|
-    let f = fun (x, y) -> let a = eq_curry(x)(y) in eq_curry(x)(y) in f
-    : a . (a, a) -> bool
+    let _ : a . (a, a) -> bool =
+      let f : b . (b, b) -> bool =
+        fun (x, y) ->
+          let a : bool = eq_curry(x)(y) in eq_curry(x)(y)
+      in
+      f
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "id(id)";
   [%expect {|
-    id(id)
-    : a . a -> a
+    let _ : a . a -> a = id(id) in
+    _
     | |}]
 
 let%expect_test "" =
   infer "choose(fun (x, y) -> x, fun (x, y) -> y)";
   [%expect
     {|
-    choose(fun (x, y) -> x, fun (x, y) -> y)
-    : a . (a, a) -> a
+    let _ : a . (a, a) -> a =
+      choose(fun (x, y) -> x, fun (x, y) -> y)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "choose_curry(fun (x, y) -> x)(fun (x, y) -> y)";
   [%expect
     {|
-    choose_curry(fun (x, y) -> x)(fun (x, y) -> y)
-    : a . (a, a) -> a
+    let _ : a . (a, a) -> a =
+      choose_curry(fun (x, y) -> x)(fun (x, y) -> y)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let x = id in let y = let z = x(id) in z in y";
   [%expect
     {|
-    let x = id in let y = let z = x(id) in z in y
-    : a . a -> a
+    let _ : a . a -> a =
+      let x : b . b -> b = id in
+      let y : c . c -> c =
+        let z : d . d -> d = x(id) in
+        z
+      in
+      y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "cons(id, nil)";
   [%expect {|
-    cons(id, nil)
-    : a . list[a -> a]
+    let _ : a . list[a -> a] = cons(id, nil) in
+    _
     | |}]
 
 let%expect_test "" =
   infer "cons_curry(id)(nil)";
   [%expect {|
-    cons_curry(id)(nil)
-    : a . list[a -> a]
+    let _ : a . list[a -> a] = cons_curry(id)(nil) in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let lst1 = cons(id, nil) in let lst2 = cons(succ, lst1) in lst2";
   [%expect
     {|
-    let lst1 = cons(id, nil) in let lst2 = cons(succ, lst1) in lst2
-    : list[int -> int]
+    let _ : list[int -> int] =
+      let lst1 : a . list[a -> a] = cons(id, nil) in
+      let lst2 : list[int -> int] = cons(succ, lst1) in
+      lst2
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "cons_curry(id)(cons_curry(succ)(cons_curry(id)(nil)))";
   [%expect
     {|
-    cons_curry(id)(cons_curry(succ)(cons_curry(id)(nil)))
-    : list[int -> int]
+    let _ : list[int -> int] =
+      cons_curry(id)(cons_curry(succ)(cons_curry(id)(nil)))
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "plus(one, true)";
   [%expect
     {|
-    plus(one, true)
     ERROR: incompatible types:
       int
     and
@@ -327,7 +398,6 @@ let%expect_test "" =
   infer "plus(one)";
   [%expect
     {|
-    plus(one)
     ERROR: incompatible types:
       _2 -> _1
     and
@@ -337,54 +407,77 @@ let%expect_test "" =
 let%expect_test "" =
   infer "fun x -> let y = x in y";
   [%expect {|
-    fun x -> let y = x in y
-    : a . a -> a
+    let _ : a . a -> a =
+      fun x ->
+        let y : a = x in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = let z = x(fun x -> x) in z in y";
   [%expect
     {|
-    fun x -> let y = let z = x(fun x -> x) in z in y
-    : a, b . ((b -> b) -> a) -> a
+    let _ : a, b . ((b -> b) -> a) -> a =
+      fun x ->
+        let y : a =
+          let z : a = x(fun x -> x) in
+          z
+        in
+        y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> fun y -> let x = x(y) in x(y)";
   [%expect
     {|
-    fun x -> fun y -> let x = x(y) in x(y)
-    : a, b . (b -> b -> a) -> b -> a
+    let _ : a, b . (b -> b -> a) -> b -> a =
+      fun x ->
+        fun y ->
+          let x : b -> a = x(y) in x(y)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> x(z) in y";
   [%expect
     {|
-    fun x -> let y = fun z -> x(z) in y
-    : a, b . (b -> a) -> b -> a
+    let _ : a, b . (b -> a) -> b -> a =
+      fun x ->
+        let y : b -> a = fun z -> x(z) in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect
     {|
-    fun x -> let y = fun z -> x in y
-    : a, b . a -> b -> a
+    let _ : a, b . a -> b -> a =
+      fun x ->
+        let y : c . c -> a = fun z -> x in y
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> fun y -> let x = x(y) in fun x -> y(x)";
   [%expect
     {|
-    fun x -> fun y -> let x = x(y) in fun x -> y(x)
-    : a, b, c . ((b -> a) -> c) -> (b -> a) -> b -> a
+    let _ : a, b, c . ((b -> a) -> c) -> (b -> a) -> b -> a =
+      fun x ->
+        fun y ->
+          let x : c = x(y) in fun x -> y(x)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> let y = x in y(y)";
   [%expect {|
-    fun x -> let y = x in y(y)
     ERROR: recursive type
     | |}]
 
@@ -392,14 +485,16 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y(y)";
   [%expect
     {|
-    fun x -> let y = fun z -> z in y(y)
-    : a, b . b -> a -> a
+    let _ : a, b . b -> a -> a =
+      fun x ->
+        let y : c . c -> c = fun z -> z in y(y)
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "fun x -> x(x)";
   [%expect {|
-    fun x -> x(x)
     ERROR: recursive type
     | |}]
 
@@ -407,7 +502,6 @@ let%expect_test "" =
   infer "one(id)";
   [%expect
     {|
-    one(id)
     ERROR: incompatible types:
       _2 -> _1
     and
@@ -418,30 +512,50 @@ let%expect_test "" =
   infer "fun f -> let x = fun (g, y) -> let _ = g(y) in eq(f, g) in x";
   [%expect
     {|
-    fun f -> let x = fun (g, y) -> let _ = g(y) in eq(f, g) in x
-    : a, b . (b -> a) -> (b -> a, b) -> bool
+    let _ : a, b . (b -> a) -> (b -> a, b) -> bool =
+      fun f ->
+        let x : (b -> a, b) -> bool =
+          fun (g, y) ->
+            let _ : a = g(y) in eq(f, g)
+        in
+        x
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let const = fun x -> fun y -> x in const";
   [%expect
     {|
-    let const = fun x -> fun y -> x in const
-    : a, b . a -> b -> a
+    let _ : a, b . a -> b -> a =
+      let const : c, d . c -> d -> c = fun x -> fun y -> x in
+      const
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let apply = fun (f, x) -> f(x) in apply";
   [%expect
     {|
-    let apply = fun (f, x) -> f(x) in apply
-    : a, b . (b -> a, b) -> a
+    let _ : a, b . (b -> a, b) -> a =
+      let apply : c, d . (d -> c, d) -> c =
+        fun (f, x) -> f(x)
+      in
+      apply
+    in
+    _
     | |}]
 
 let%expect_test "" =
   infer "let apply_curry = fun f -> fun x -> f(x) in apply_curry";
   [%expect
     {|
-    let apply_curry = fun f -> fun x -> f(x) in apply_curry
-    : a, b . (b -> a) -> b -> a
+    let _ : a, b . (b -> a) -> b -> a =
+      let apply_curry : c, d . (d -> c) -> d -> c =
+        fun f -> fun x -> f(x)
+      in
+      apply_curry
+    in
+    _
     | |}]
