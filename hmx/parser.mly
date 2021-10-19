@@ -24,7 +24,7 @@ let build_ty_sch (vs, env) ty =
 		| Ty_app (fty, atys) -> Ty_app (build_ty fty, List.map atys ~f:build_ty)
 		| Ty_arr (atys, rty) -> Ty_arr (List.map atys ~f:build_ty, build_ty rty)
 	in
-  vs, (C.trivial, build_ty ty)
+  vs, build_ty ty
 
 %}
 
@@ -51,7 +51,7 @@ expr:
 	  e = simple_expr     { e }
 
 	(* let-bindings *)
-	| LET n = IDENT EQUALS e = expr IN b = expr     { E_let ((n, e, ref None), b) }
+	| LET n = IDENT EQUALS e = expr IN b = expr     { E_let ((n, e, None), b) }
 
 	(* functions *)
   | FUN arg = IDENT ARROW body = expr
@@ -60,9 +60,9 @@ expr:
     { E_abs (args, body) }
 
 	| LET n = IDENT arg = IDENT EQUALS e = expr IN b = expr
-    { E_let ((n, E_abs ([arg], e), ref None), b) }
+    { E_let ((n, E_abs ([arg], e), None), b) }
 	| LET n = IDENT LPAREN args = flex_list(COMMA, IDENT) RPAREN EQUALS e = expr IN b = expr
-    { E_let ((n, E_abs (args, e), ref None), b) }
+    { E_let ((n, E_abs (args, e), None), b) }
 
 simple_expr:
 	  n = IDENT              { E_var n }
@@ -74,9 +74,9 @@ ident_list:
     xs = nonempty_flex_list(COMMA, IDENT) { xs }
 
 ty_sch:
-  qt = ty { [], (C.trivial, qt) }
-	| vars = ident_list DOT ty = ty
-	  { let env = makeenv vars in build_ty_sch env ty }
+  t = ty { [], t }
+	| vars = ident_list DOT t = ty
+	  { let env = makeenv vars in build_ty_sch env t }
 
 ty:
 	  t = simple_ty

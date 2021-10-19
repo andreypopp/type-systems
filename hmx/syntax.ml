@@ -2,33 +2,25 @@ open! Base
 
 type name = string [@@deriving sexp_of]
 
-type id = int [@@deriving sexp_of]
+and id = int
 
-type lvl = int [@@deriving sexp_of]
+and lvl = int
 
 type expr =
   | E_var of name
   | E_abs of name list * expr
   | E_app of expr * expr list
-  | E_let of (name * expr * ty_sch option ref) * expr
+  | E_let of (name * expr * ty_sch option) * expr
   | E_lit of lit
+[@@deriving sexp_of]
 
-and lit = Lit_string of string | Lit_int of int [@@deriving sexp_of]
+and lit = Lit_string of string | Lit_int of int
 
 and ty =
   | Ty_const of name
   | Ty_var of var
   | Ty_app of ty * ty list
   | Ty_arr of ty list * ty
-[@@deriving sexp_of]
-
-and con =
-  | C_trivial
-  | C_eq of ty * ty
-  | C_and of con list
-  | C_exists of var list * con
-  | C_let of (name * ty_sch * ty_sch option ref) list * con
-  | C_inst of name * ty
 
 and var = var_data Union_find.t
 
@@ -40,9 +32,7 @@ and var_data = {
       (** Types are discovered as a result of unification. *)
 }
 
-and cty = con * ty
-
-and ty_sch = var list * cty
+and ty_sch = var list * ty
 
 module Names : sig
   type t
@@ -79,14 +69,23 @@ module Id = struct
   let reset () = c := 0
 end
 
-module Showable (S : sig
+module type SHOWABLE = sig
   type t
 
   val layout : t -> PPrint.document
 
-  val sexp_of_t : t -> Sexp.t
-end) =
-struct
+  val show : t -> string
+
+  val print : ?label:string -> t -> unit
+end
+
+module Showable (S : sig
+  type t
+
+  val layout : t -> PPrint.document
+end) : SHOWABLE with type t = S.t = struct
+  type t = S.t
+
   let layout = S.layout
 
   let show v =
@@ -99,14 +98,34 @@ struct
     match label with
     | Some label -> Caml.print_endline (label ^ ": " ^ show v)
     | None -> Caml.print_endline (show v)
+end
 
-  let pp ppf v = PPrint.ToFormatter.pretty 1. 60 ppf (S.layout v)
+module type DUMPABLE = sig
+  type t
+
+  val dump : ?label:string -> t -> unit
+
+  val sdump : ?label:string -> t -> string
+end
+
+module Dumpable (S : sig
+  type t
+
+  val sexp_of_t : t -> Sexp.t
+end) : DUMPABLE with type t = S.t = struct
+  type t = S.t
 
   let dump ?label v =
     let s = S.sexp_of_t v in
     match label with
     | None -> Caml.Format.printf "%a@." Sexp.pp_hum s
     | Some label -> Caml.Format.printf "%s %a@." label Sexp.pp_hum s
+
+  let sdump ?label v =
+    let s = S.sexp_of_t v in
+    match label with
+    | None -> Caml.Format.asprintf "%a@." Sexp.pp_hum s
+    | Some label -> Caml.Format.asprintf "%s %a@." label Sexp.pp_hum s
 end
 
 let layout_var v =
@@ -115,102 +134,7 @@ let layout_var v =
   if Debug.log_levels then string (Printf.sprintf "_%i@%s" v.id lvl)
   else string (Printf.sprintf "_%i" v.id)
 
-let rec layout_con_var' ~names v =
-  let open PPrint in
-  match v.ty with
-  | Some ty -> layout_ty' ~names ty
-  | None -> (
-    match Names.lookup names v.id with
-    | Some name ->
-      if Debug.log_levels then string name ^^ parens (layout_var v)
-      else string name
-    | None -> layout_var v)
-
-and layout_ty' ~names ty =
-  let open PPrint in
-  let rec is_ty_arr = function
-    | Ty_var var -> (
-      match (Union_find.value var).ty with
-      | None -> false
-      | Some ty -> is_ty_arr ty)
-    | Ty_arr _ -> true
-    | _ -> false
-  in
-  let rec layout_ty = function
-    | Ty_const name -> string name
-    | Ty_arr ([ aty ], rty) ->
-      (* Check if we can layout this as simply as [aty -> try] in case of a
-         single argument. *)
-      (if is_ty_arr aty then
-       (* If the single arg is the Ty_arr we need to wrap it in parens. *)
-       parens (layout_ty aty)
-      else layout_ty aty)
-      ^^ string " -> "
-      ^^ layout_ty rty
-    | Ty_arr (atys, rty) ->
-      let sep = comma ^^ blank 1 in
-      parens (separate sep (List.map atys ~f:layout_ty))
-      ^^ string " -> "
-      ^^ layout_ty rty
-    | Ty_app (fty, atys) ->
-      let sep = comma ^^ blank 1 in
-      layout_ty fty ^^ brackets (separate sep (List.map atys ~f:layout_ty))
-    | Ty_var var -> (
-      let data = Union_find.value var in
-      match data.ty with
-      | None -> layout_con_var' ~names data
-      | Some ty -> layout_ty ty)
-  in
-  layout_ty ty
-
-let rec layout_con' ~names c =
-  let open PPrint in
-  match c with
-  | C_trivial -> string "TRUE"
-  | C_eq (ty1, ty2) ->
-    layout_ty' ~names ty1 ^^ string " = " ^^ layout_ty' ~names ty2
-  | C_and cs ->
-    let sep = string " & " in
-    separate sep (List.map cs ~f:(layout_con' ~names))
-  | C_exists (vs, c) ->
-    string "∃"
-    ^^ separate comma
-         (List.map vs ~f:(fun v ->
-              let v = Union_find.value v in
-              layout_con_var' ~names v))
-    ^^ dot
-    ^^ parens (layout_con' ~names c)
-  | C_let (bindings, c) ->
-    let layout_binding (name, ty_sch, _) =
-      string name ^^ string " : " ^^ layout_ty_sch' ~names ty_sch
-    in
-    let sep = comma ^^ blank 1 in
-    string "let "
-    ^^ separate sep (List.map bindings ~f:layout_binding)
-    ^^ string " in "
-    ^^ layout_con' ~names c
-  | C_inst (name, ty) -> string name ^^ string " ≲ " ^^ layout_ty' ~names ty
-
-and layout_cty' ~names cty =
-  let open PPrint in
-  match cty with
-  | C_trivial, ty -> layout_ty' ~names ty
-  | c, ty -> layout_con' ~names c ^^ string " => " ^^ layout_ty' ~names ty
-
-and layout_ty_sch' ~names ty_sch =
-  let open PPrint in
-  match ty_sch with
-  | [], cty -> layout_cty' ~names cty
-  | vs, cty ->
-    let sep = comma ^^ blank 1 in
-    let vars =
-      List.map vs ~f:(fun v ->
-          let v = Union_find.value v in
-          string (Names.alloc names v.id))
-    in
-    separate sep vars ^^ string " . " ^^ layout_cty' ~names cty
-
-and layout_expr' ~names =
+let rec layout_expr' ~names =
   let open PPrint in
   function
   | E_var name -> string name
@@ -257,7 +181,7 @@ and layout_expr' ~names =
           let ascription =
             (* We need to layout ty_sch first as it will allocate names for use
                down the road. *)
-            match ty_sch.contents with
+            match ty_sch with
             | None -> empty
             | Some ty_sch -> string " : " ^^ layout_ty_sch' ~names ty_sch
           in
@@ -278,18 +202,90 @@ and layout_expr' ~names =
   | E_lit (Lit_string v) -> dquotes (string v)
   | E_lit (Lit_int v) -> dquotes (string (Int.to_string v))
 
+and layout_ty' ~names ty =
+  let open PPrint in
+  let rec is_ty_arr = function
+    | Ty_var var -> (
+      match (Union_find.value var).ty with
+      | None -> false
+      | Some ty -> is_ty_arr ty)
+    | Ty_arr _ -> true
+    | _ -> false
+  in
+  let rec layout_ty = function
+    | Ty_const name -> string name
+    | Ty_arr ([ aty ], rty) ->
+      (* Check if we can layout this as simply as [aty -> try] in case of a
+         single argument. *)
+      (if is_ty_arr aty then
+       (* If the single arg is the Ty_arr we need to wrap it in parens. *)
+       parens (layout_ty aty)
+      else layout_ty aty)
+      ^^ string " -> "
+      ^^ layout_ty rty
+    | Ty_arr (atys, rty) ->
+      let sep = comma ^^ blank 1 in
+      parens (separate sep (List.map atys ~f:layout_ty))
+      ^^ string " -> "
+      ^^ layout_ty rty
+    | Ty_app (fty, atys) ->
+      let sep = comma ^^ blank 1 in
+      layout_ty fty ^^ brackets (separate sep (List.map atys ~f:layout_ty))
+    | Ty_var var -> (
+      let data = Union_find.value var in
+      match data.ty with
+      | None -> layout_con_var' ~names data
+      | Some ty -> layout_ty ty)
+  in
+  layout_ty ty
+
+and layout_con_var' ~names v =
+  let open PPrint in
+  match v.ty with
+  | Some ty -> layout_ty' ~names ty
+  | None -> (
+    match Names.lookup names v.id with
+    | Some name ->
+      if Debug.log_levels then string name ^^ parens (layout_var v)
+      else string name
+    | None -> layout_var v)
+
+and layout_ty_sch' ~names ty_sch =
+  let open PPrint in
+  match ty_sch with
+  | [], cty -> layout_ty' ~names cty
+  | vs, cty ->
+    let vs = layout_var_prenex' ~names vs in
+    vs ^^ layout_ty' ~names cty
+
+and layout_var_prenex' ~names vs =
+  let open PPrint in
+  let sep = comma ^^ blank 1 in
+  let vs =
+    List.map vs ~f:(fun v ->
+        let v = Union_find.value v in
+        string (Names.alloc names v.id))
+  in
+  separate sep vs ^^ string " . "
+
 module Expr = struct
   type t = expr
 
-  include Showable (struct
-    type t = expr
+  include (
+    Showable (struct
+      type t = expr
 
-    let sexp_of_t = sexp_of_expr
+      let layout e = layout_expr' ~names:(Names.make ()) e
+    end) :
+      SHOWABLE with type t := t)
 
-    let layout e =
-      let names = Names.make () in
-      layout_expr' ~names e
-  end)
+  include (
+    Dumpable (struct
+      type t = expr
+
+      let sexp_of_t = sexp_of_expr
+    end) :
+      DUMPABLE with type t := t)
 end
 
 module Ty = struct
@@ -299,21 +295,60 @@ module Ty = struct
 
   let var var = Ty_var var
 
-  include Showable (struct
-    type t = ty
+  include (
+    Showable (struct
+      type t = ty
 
-    let sexp_of_t = sexp_of_ty
+      let layout ty = layout_ty' ~names:(Names.make ()) ty
+    end) :
+      SHOWABLE with type t := t)
 
-    let layout ty =
-      let names = Names.make () in
-      layout_ty' ~names ty
-  end)
+  include (
+    Dumpable (struct
+      type t = ty
+
+      let sexp_of_t = sexp_of_ty
+    end) :
+      DUMPABLE with type t := t)
 end
 
+module Ty_sch = struct
+  type t = ty_sch
+
+  include (
+    Showable (struct
+      type t = ty_sch
+
+      let layout ty_sch = layout_ty_sch' ~names:(Names.make ()) ty_sch
+    end) :
+      SHOWABLE with type t := t)
+
+  include (
+    Dumpable (struct
+      type t = ty_sch
+
+      let sexp_of_t = sexp_of_ty_sch
+    end) :
+      DUMPABLE with type t := t)
+end
+
+(** Constraint language. *)
 module C = struct
-  type t = con
+  type _ t =
+    | C_trivial : unit t
+    | C_eq : ty * ty -> unit t
+    | C_inst : name * ty -> ty t
+    | C_and : 'a t * 'b t -> ('a * 'b) t
+    | C_and_list : 'a t list -> 'a list t
+    | C_exists : var list * 'a t -> 'a t
+    | C_let :
+        (name * var list * 'e t * ty) list * 'b t
+        -> (('e * ty_sch) list * 'b) t
+    | C_map : 'a t * ('a -> 'b) -> 'b t
 
   let trivial = C_trivial
+
+  let return v = C_map (C_trivial, fun () -> v)
 
   let ( =~ ) x y = C_eq (x, y)
 
@@ -331,55 +366,80 @@ module C = struct
       | C_exists (tys', c) -> C_exists (tys @ tys', c)
       | c -> C_exists (tys, c))
 
-  let let_in bindings c =
-    match bindings with
-    | [] -> c
-    | bindings -> C_let (bindings, c)
+  let let_in bindings c = C_let (bindings, c)
 
-  let ( &~ ) x y =
-    match (x, y) with
-    | c, C_trivial -> c
-    | C_trivial, c -> c
-    | C_and xs, C_and ys -> C_and (xs @ ys)
-    | C_and xs, x -> C_and (x :: xs)
-    | x, C_and xs -> C_and (x :: xs)
-    | x, y -> C_and [ x; y ]
+  let ( &~ ) x y = C_and (x, y)
 
-  include Showable (struct
-    type t = con
+  let ( >>| ) c f = C_map (c, f)
 
-    let sexp_of_t = sexp_of_con
+  let list cs = C_and_list cs
 
-    let layout c =
-      let names = Names.make () in
-      layout_con' ~names c
-  end)
-end
+  let rec layout' : type a. names:Names.t -> a t -> PPrint.document =
+   fun ~names c ->
+    let open PPrint in
+    match c with
+    | C_trivial -> string "TRUE"
+    | C_eq (ty1, ty2) ->
+      layout_ty' ~names ty1 ^^ string " = " ^^ layout_ty' ~names ty2
+    | C_and (a, b) -> layout' ~names a ^^ string " & " ^^ layout' ~names b
+    | C_and_list cs ->
+      let sep = string " & " in
+      separate sep (List.map cs ~f:(layout' ~names))
+    | C_exists (vs, c) ->
+      string "∃"
+      ^^ separate comma
+           (List.map vs ~f:(fun v ->
+                let v = Union_find.value v in
+                layout_con_var' ~names v))
+      ^^ dot
+      ^^ parens (layout' ~names c)
+    | C_let (bindings, c) ->
+      let layout_cty' : type a. a t * ty -> document = function
+        | C_trivial, ty -> layout_ty' ~names ty
+        | c, ty -> layout' ~names c ^^ string " => " ^^ layout_ty' ~names ty
+      in
+      let layout_binding : type a. string * var list * a t * ty -> document =
+       fun (name, vs, c, ty) ->
+        string name
+        ^^ string " : "
+        ^^
+        match vs with
+        | [] -> layout_cty' (c, ty)
+        | vs ->
+          let vs = layout_var_prenex' ~names vs in
+          vs ^^ layout_cty' (c, ty)
+      in
+      let sep = comma ^^ blank 1 in
+      string "let "
+      ^^ separate sep (List.map bindings ~f:layout_binding)
+      ^^ string " in "
+      ^^ layout' ~names c
+    | C_inst (name, ty) -> string name ^^ string " ≲ " ^^ layout_ty' ~names ty
+    | C_map (c, _f) -> layout' ~names c
 
-module Cty = struct
-  type t = cty
+  include (
+    struct
+      type pack = P : _ t -> pack
 
-  include Showable (struct
-    type t = cty
+      include Showable (struct
+        type t = pack
 
-    let sexp_of_t = sexp_of_cty
+        let layout (P c) =
+          let names = Names.make () in
+          layout' ~names c
+      end)
 
-    let layout cty =
-      let names = Names.make () in
-      layout_cty' ~names cty
-  end)
-end
+      let layout c = layout (P c)
 
-module Ty_sch = struct
-  type t = ty_sch
+      let show c = show (P c)
 
-  include Showable (struct
-    type t = ty_sch
+      let print ?label c = print ?label (P c)
+    end :
+      sig
+        val layout : _ t -> PPrint.document
 
-    let sexp_of_t = sexp_of_ty_sch
+        val show : _ t -> string
 
-    let layout =
-      let names = Names.make () in
-      layout_ty_sch' ~names
-  end)
+        val print : ?label:string -> _ t -> unit
+      end)
 end

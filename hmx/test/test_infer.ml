@@ -38,7 +38,7 @@ let infer ?(env = env) code =
   Id.reset ();
   let prog = Expr.parse_string code in
   match infer ~env prog with
-  | Ok (_ty_sch, e) -> Caml.Format.printf "%s@.|" (Expr.show e)
+  | Ok e -> Caml.Format.printf "%s@.|" (Expr.show e)
   | Error err -> Caml.Format.printf "ERROR: %s@.|" (Error.show err)
 
 let%expect_test "" =
@@ -57,7 +57,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let x = world in x";
-  [%expect {|
+  [%expect
+    {|
     let _ : string =
       let x : string = world in
       x
@@ -74,7 +75,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let x = fun () -> world in world";
-  [%expect {|
+  [%expect
+    {|
     let _ : string =
       let x : () -> string = fun () -> world in
       world
@@ -84,7 +86,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let x = fun () -> world in x";
-  [%expect {|
+  [%expect
+    {|
     let _ : () -> string =
       let x : () -> string = fun () -> world in
       x
@@ -123,7 +126,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "fun x -> let y = x in y";
-  [%expect {|
+  [%expect
+    {|
     let _ : a . a -> a =
       fun x ->
         let y : a = x in y
@@ -170,7 +174,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let x = id in x";
-  [%expect {|
+  [%expect
+    {|
     let _ : a . a -> a =
       let x : b . b -> b = id in
       x
@@ -180,7 +185,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let x = fun y -> y in x";
-  [%expect {|
+  [%expect
+    {|
     let _ : a . a -> a =
       let x : b . b -> b = fun y -> y in
       x
@@ -239,7 +245,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let f = fun x -> x in eq(f, succ)";
-  [%expect {|
+  [%expect
+    {|
     let _ : bool =
       let f : a . a -> a = fun x -> x in
       eq(f, succ)
@@ -249,7 +256,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "let f = fun x -> x in eq_curry(f)(succ)";
-  [%expect {|
+  [%expect
+    {|
     let _ : bool =
       let f : a . a -> a = fun x -> x in
       eq_curry(f)(succ)
@@ -273,9 +281,9 @@ let%expect_test "" =
   [%expect
     {|
     ERROR: incompatible types:
-      bool
-    and
       int
+    and
+      bool
     | |}]
 
 let%expect_test "" =
@@ -357,7 +365,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "cons_curry(id)(nil)";
-  [%expect {|
+  [%expect
+    {|
     let _ : a . list[a -> a] = cons_curry(id)(nil) in
     _
     | |}]
@@ -406,7 +415,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer "fun x -> let y = x in y";
-  [%expect {|
+  [%expect
+    {|
     let _ : a . a -> a =
       fun x ->
         let y : a = x in y

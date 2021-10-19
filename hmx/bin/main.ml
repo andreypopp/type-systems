@@ -13,5 +13,5 @@ let () =
   in
   let e = Expr.parse_chan Stdio.stdin in
   match infer ~env e with
-  | Ok (_ty_sch, e) -> Caml.Format.printf "%s@." (Expr.show e)
+  | Ok e -> Caml.Format.printf "%s@." (Expr.show e)
   | Error err -> Caml.Format.printf "ERROR: %s@." (Error.show err)

@@ -42,10 +42,6 @@ module C = struct
   include Syntax.C
 end
 
-module Cty = struct
-  include Syntax.Cty
-end
-
 module Id = Syntax.Id
 module Error = Infer.Error
 
