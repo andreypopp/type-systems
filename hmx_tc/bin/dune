@@ -1,0 +1,4 @@
+(executable
+ (public_name hmx_tc)
+ (name main)
+ (libraries hmx_tc base stdio))

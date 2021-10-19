@@ -22,6 +22,10 @@
 
   The elaboration mechanism is shamelessly stolen from [inferno][].
 
+- `hmx_tc` - [HM(X)][] extends with Multi-Parameter Typeclasses (MPTC).
+  Type inference and elaborator are implemented but the environment construction
+  doesn't check for overlapping instances yet.
+
 # Development
 
 ```

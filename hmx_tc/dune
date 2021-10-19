@@ -1,0 +1,11 @@
+(library
+ (name hmx_tc)
+ (preprocess (pps ppx_sexp_conv))
+ (libraries base pprint nice_parser)
+ )
+
+(ocamllex lexer)
+
+(menhir
+  (modules parser)
+  (flags --explain --dump))
