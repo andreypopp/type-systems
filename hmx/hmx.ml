@@ -38,17 +38,13 @@ module Ty_sch = struct
   end)
 end
 
-module C = struct
-  include Syntax.C
-end
-
-module Id = Syntax.Id
-module Error = Infer.Error
+module Type_error = Type_error
+module Var = Var
 
 module Env = struct
   include Infer.Env
 
-  let assume_val name ty env = add env name (Ty_sch.parse_string ty)
+  let assume_val name ty env = add_val env name (Ty_sch.parse_string ty)
 end
 
 let infer = Infer.infer

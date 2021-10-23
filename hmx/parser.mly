@@ -4,14 +4,15 @@ open Syntax
 
 let makeenv vars =
   let open Base in
-  Id.reset ();
-  List.fold_left
+  Var.reset ();
+  let vs, map = List.fold_left
     vars
     ~init:([], Map.empty (module String))
     ~f:(fun (vs, env) name ->
-      let v = C.fresh_var () in
+      let v = Var.fresh () in
       v::vs,
-      Map.set env ~key:name ~data:(Ty.var v))
+      Map.set env ~key:name ~data:(Ty.var v)) in
+  List.rev vs, map
 
 let build_ty_sch (vs, env) ty =
   let open Base in
@@ -25,7 +26,6 @@ let build_ty_sch (vs, env) ty =
 		| Ty_arr (atys, rty) -> Ty_arr (List.map atys ~f:build_ty, build_ty rty)
 	in
   vs, build_ty ty
-
 %}
 
 %token <string> IDENT
@@ -74,7 +74,7 @@ ident_list:
     xs = nonempty_flex_list(COMMA, IDENT) { xs }
 
 ty_sch:
-  t = ty { [], t }
+    t = ty { [], t }
 	| vars = ident_list DOT t = ty
 	  { let env = makeenv vars in build_ty_sch env t }
 
@@ -91,7 +91,7 @@ ty:
 simple_ty:
 	  n = IDENT             { Ty_const n }
 	| LPAREN t = ty RPAREN  { t }
-	| f = simple_ty LBRACKET args = nonempty_flex_list(COMMA, ty) RBRACKET
+  | f = simple_ty LBRACKET args = nonempty_flex_list(COMMA, ty) RBRACKET
 	  { Ty_app (f, args) }
 
 (* Utilities for flexible lists (and its non-empty version).

@@ -35,11 +35,11 @@ let env =
   |> Env.assume_val "print" "string -> string"
 
 let infer ?(env = env) code =
-  Id.reset ();
+  Var.reset ();
   let prog = Expr.parse_string code in
   match infer ~env prog with
   | Ok e -> Caml.Format.printf "%s@.|" (Expr.show e)
-  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Error.show err)
+  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Type_error.show err)
 
 let%expect_test "" =
   infer "world";
@@ -117,7 +117,7 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect
     {|
-    let _ : a, b . b -> a -> a =
+    let _ : a, b . a -> b -> b =
       fun x ->
         let y : c . c -> c = fun z -> z in y
     in
@@ -139,9 +139,9 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect
     {|
-    let _ : a, b . a -> b -> a =
+    let _ : a, b . b -> a -> b =
       fun x ->
-        let y : c . c -> a = fun z -> x in y
+        let y : c . c -> b = fun z -> x in y
     in
     _
     | |}]
@@ -204,7 +204,7 @@ let%expect_test "" =
 let%expect_test "" =
   infer "pair";
   [%expect {|
-    let _ : a, b . (a, b) -> pair[a, b] = pair in
+    let _ : a, b . (b, a) -> pair[b, a] = pair in
     _
     | |}]
 
@@ -212,7 +212,7 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y";
   [%expect
     {|
-    let _ : a, b . b -> a -> a =
+    let _ : a, b . a -> b -> b =
       fun x ->
         let y : c . c -> c = fun z -> z in y
     in
@@ -428,10 +428,10 @@ let%expect_test "" =
   infer "fun x -> let y = let z = x(fun x -> x) in z in y";
   [%expect
     {|
-    let _ : a, b . ((b -> b) -> a) -> a =
+    let _ : a, b . ((a -> a) -> b) -> b =
       fun x ->
-        let y : a =
-          let z : a = x(fun x -> x) in
+        let y : b =
+          let z : b = x(fun x -> x) in
           z
         in
         y
@@ -443,10 +443,10 @@ let%expect_test "" =
   infer "fun x -> fun y -> let x = x(y) in x(y)";
   [%expect
     {|
-    let _ : a, b . (b -> b -> a) -> b -> a =
+    let _ : a, b . (a -> a -> b) -> a -> b =
       fun x ->
         fun y ->
-          let x : b -> a = x(y) in x(y)
+          let x : a -> b = x(y) in x(y)
     in
     _
     | |}]
@@ -455,9 +455,9 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> x(z) in y";
   [%expect
     {|
-    let _ : a, b . (b -> a) -> b -> a =
+    let _ : a, b . (a -> b) -> a -> b =
       fun x ->
-        let y : b -> a = fun z -> x(z) in y
+        let y : a -> b = fun z -> x(z) in y
     in
     _
     | |}]
@@ -466,9 +466,9 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> x in y";
   [%expect
     {|
-    let _ : a, b . a -> b -> a =
+    let _ : a, b . b -> a -> b =
       fun x ->
-        let y : c . c -> a = fun z -> x in y
+        let y : c . c -> b = fun z -> x in y
     in
     _
     | |}]
@@ -477,10 +477,10 @@ let%expect_test "" =
   infer "fun x -> fun y -> let x = x(y) in fun x -> y(x)";
   [%expect
     {|
-    let _ : a, b, c . ((b -> a) -> c) -> (b -> a) -> b -> a =
+    let _ : a, b, c . ((b -> c) -> a) -> (b -> c) -> b -> c =
       fun x ->
         fun y ->
-          let x : c = x(y) in fun x -> y(x)
+          let x : a = x(y) in fun x -> y(x)
     in
     _
     | |}]
@@ -495,7 +495,7 @@ let%expect_test "" =
   infer "fun x -> let y = fun z -> z in y(y)";
   [%expect
     {|
-    let _ : a, b . b -> a -> a =
+    let _ : a, b . a -> b -> b =
       fun x ->
         let y : c . c -> c = fun z -> z in y(y)
     in
@@ -522,11 +522,11 @@ let%expect_test "" =
   infer "fun f -> let x = fun (g, y) -> let _ = g(y) in eq(f, g) in x";
   [%expect
     {|
-    let _ : a, b . (b -> a) -> (b -> a, b) -> bool =
+    let _ : a, b . (a -> b) -> (a -> b, a) -> bool =
       fun f ->
-        let x : (b -> a, b) -> bool =
+        let x : (a -> b, a) -> bool =
           fun (g, y) ->
-            let _ : a = g(y) in eq(f, g)
+            let _ : b = g(y) in eq(f, g)
         in
         x
     in
@@ -537,8 +537,8 @@ let%expect_test "" =
   infer "let const = fun x -> fun y -> x in const";
   [%expect
     {|
-    let _ : a, b . a -> b -> a =
-      let const : c, d . c -> d -> c = fun x -> fun y -> x in
+    let _ : a, b . b -> a -> b =
+      let const : c, d . d -> c -> d = fun x -> fun y -> x in
       const
     in
     _
@@ -548,8 +548,8 @@ let%expect_test "" =
   infer "let apply = fun (f, x) -> f(x) in apply";
   [%expect
     {|
-    let _ : a, b . (b -> a, b) -> a =
-      let apply : c, d . (d -> c, d) -> c =
+    let _ : a, b . (a -> b, a) -> b =
+      let apply : c, d . (c -> d, c) -> d =
         fun (f, x) -> f(x)
       in
       apply
@@ -561,8 +561,8 @@ let%expect_test "" =
   infer "let apply_curry = fun f -> fun x -> f(x) in apply_curry";
   [%expect
     {|
-    let _ : a, b . (b -> a) -> b -> a =
-      let apply_curry : c, d . (d -> c) -> d -> c =
+    let _ : a, b . (a -> b) -> a -> b =
+      let apply_curry : c, d . (c -> d) -> c -> d =
         fun f -> fun x -> f(x)
       in
       apply_curry
