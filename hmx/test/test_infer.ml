@@ -3,6 +3,11 @@ open Hmx
 
 let env =
   Env.empty
+  |> Env.assume_type "int" 0
+  |> Env.assume_type "bool" 0
+  |> Env.assume_type "string" 0
+  |> Env.assume_type "list" 1
+  |> Env.assume_type "pair" 2
   |> Env.assume_val "fix" "a . (a -> a) -> a"
   |> Env.assume_val "head" "a . list[a] -> a"
   |> Env.assume_val "tail" "a . list[a] -> list[a]"
@@ -38,7 +43,12 @@ let infer ?(env = env) code =
   Var.reset ();
   let prog = Expr.parse_string code in
   match infer ~env prog with
-  | Ok e -> Caml.Format.printf "%s@.|" (Expr.show e)
+  | Ok (e, ty_sch) ->
+    (* Wrap into [let _ : ty = e in _] so that we print the inferred type. *)
+    let e =
+      Syntax.E_let (("_", e, Some ty_sch), E_var (Syntax.Path.make "_"))
+    in
+    Caml.Format.printf "%s@.|" (Expr.show e)
   | Error err -> Caml.Format.printf "ERROR: %s@.|" (Type_error.show err)
 
 let%expect_test "" =
@@ -163,13 +173,13 @@ let%expect_test "" =
 let%expect_test "" =
   infer "x";
   [%expect {|
-    ERROR: unknown name: x
+    ERROR: unknown value: x
     | |}]
 
 let%expect_test "" =
   infer "let x = x in x";
   [%expect {|
-    ERROR: unknown name: x
+    ERROR: unknown value: x
     | |}]
 
 let%expect_test "" =

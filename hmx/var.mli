@@ -1,3 +1,4 @@
+open! Base
 open Syntax
 
 type t = var
@@ -7,6 +8,12 @@ val fresh : ?lvl:lvl -> unit -> t
 val reset : unit -> unit
 
 val equal : t -> t -> bool
+
+val compare : t -> t -> int
+
+val hash : t -> int
+
+val sexp_of_t : t -> Sexp.t
 
 val show : t -> string
 

@@ -25,11 +25,22 @@ let set_lvl lvl v = (Union_find.value v).lvl <- Some lvl
 
 let equal = Union_find.equal
 
+let hash v =
+  let v = Union_find.value v in
+  Int.hash v.id
+
+let compare a b =
+  let a = Union_find.value a
+  and b = Union_find.value b in
+  Int.compare a.id b.id
+
 let show v =
   let data = Union_find.value v in
   match data.ty with
   | None -> Printf.sprintf "_%i" data.id
   | Some ty -> Ty.show ty
+
+let sexp_of_t v = Sexp.Atom (show v)
 
 let merge_lvl lvl1 lvl2 =
   match (lvl1, lvl2) with
@@ -45,7 +56,8 @@ let merge_lvl lvl1 lvl2 =
 let occurs_check_adjust_lvl var =
   let rec occurs_check_ty ty' : unit =
     match ty' with
-    | Ty_const _ -> ()
+    | Ty_name _ -> ()
+    | Ty_abstract _ -> ()
     | Ty_arr (args, ret) ->
       List.iter args ~f:occurs_check_ty;
       occurs_check_ty ret

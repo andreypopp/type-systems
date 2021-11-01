@@ -7,7 +7,7 @@
 
  *)
 
-open Base
+open Import
 open Syntax
 
 type _ t =
@@ -15,7 +15,7 @@ type _ t =
       (** A trivial constraint, states nothing useful. Always can be solved. *)
   | C_eq : ty * ty -> unit t
       (** [C_eq (ty1, ty2)] states that the types [ty1] and [ty2] are equal. *)
-  | C_inst : name * ty -> expr t
+  | C_inst : Path.t * ty -> expr t
       (** [C_inst (name, ty)] states that [name] should be fetched from the
           environment, instantiated and equated to [ty]. *)
   | C_and : 'a t * 'b t -> ('a * 'b) t
@@ -96,7 +96,7 @@ let rec layout' : type a. names:Names.t -> a t -> PPrint.document =
     ^^ separate sep (List.map bindings ~f:layout_binding)
     ^^ string " in "
     ^^ layout' ~names c
-  | C_inst (name, ty) -> string name ^^ string " ≲ " ^^ layout_ty' ~names ty
+  | C_inst (p, ty) -> Path.layout p ^^ string " ≲ " ^^ layout_ty' ~names ty
   | C_map (c, _f) -> layout' ~names c
 
 include (

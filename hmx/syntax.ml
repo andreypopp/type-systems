@@ -1,13 +1,57 @@
-open! Base
+open! Import
 
-type name = string [@@deriving sexp_of]
+module type XX = sig
+  type a
+end
+
+type name = string [@@deriving sexp_of, compare]
 
 and id = int
 
 and lvl = int
 
+and arity = int
+
+module Path = struct
+  type t = Path_ident of name | Path_project of t * name
+  [@@deriving sexp_of, compare]
+
+  include Comparator.Make (struct
+    type nonrec t = t
+
+    let compare = compare
+
+    let sexp_of_t = sexp_of_t
+  end)
+
+  let equal a b = compare a b = 0
+
+  let make ident = Path_ident ident
+
+  let project p name = Path_project (p, name)
+
+  let prefix prefix p =
+    let rec aux = function
+      | Path_ident name -> Path_project (prefix, name)
+      | Path_project (p, name) -> Path_project (aux p, name)
+    in
+    aux p
+
+  include (
+    Showable (struct
+      type nonrec t = t
+
+      let rec layout p =
+        let open PPrint in
+        match p with
+        | Path_ident name -> string name
+        | Path_project (parent, name) -> layout parent ^^ dot ^^ string name
+    end) :
+      SHOWABLE with type t := t)
+end
+
 type expr =
-  | E_var of name
+  | E_var of Path.t
   | E_abs of name list * expr
   | E_app of expr * expr list
   | E_let of (name * expr * ty_sch option) * expr
@@ -17,7 +61,8 @@ type expr =
 and lit = Lit_string of string | Lit_int of int
 
 and ty =
-  | Ty_const of name
+  | Ty_name of Path.t
+  | Ty_abstract of Path.t
   | Ty_var of var
   | Ty_app of ty * ty list
   | Ty_arr of ty list * ty
@@ -33,6 +78,36 @@ and var_data = {
 }
 
 and ty_sch = var list * ty
+
+(* Module language. *)
+and mexpr =
+  | M_path : Path.t -> mexpr  (** X.Y *)
+  | M_str : mstr -> mexpr  (** struct ... end *)
+  | M_constr : mexpr * mty -> mexpr  (** X : Ty *)
+
+and mstr = mstr_item list
+
+and mstr_item =
+  | Mstr_val : name * ty_sch option * expr -> mstr_item  (** let name = ... *)
+  | Mstr_ty : name * ty_decl -> mstr_item  (** type name = ... *)
+  | Mstr_mexpr : name * mexpr -> mstr_item  (** module X = ... *)
+  | Mstr_mty : name * mty -> mstr_item  (** module type X = ... *)
+
+and mty =
+  | Mty_sig : msig -> mty  (** sig ... end *)
+  | Mty_path : Path.t -> mty  (** X.Y *)
+
+and msig = msig_item list
+
+and msig_item =
+  | Msig_val : name * ty_sch -> msig_item  (** val name : ty *)
+  | Msig_ty : name * ty_decl -> msig_item  (** type name = ... *)
+  | Msig_mexpr : name * mty -> msig_item  (** module X : Ty *)
+  | Msig_mty : name * mty -> msig_item  (** module type X = ... *)
+
+and ty_decl =
+  | Ty_decl_alias : ty_sch -> ty_decl  (** type name[p1, p2, ...] = ty *)
+  | Ty_decl_abstract : arity -> ty_decl  (** type name[p1, p2, ...] *)
 
 module Names : sig
   type t
@@ -69,65 +144,6 @@ module MakeId () = struct
   let reset () = c := 0
 end
 
-module type SHOWABLE = sig
-  type t
-
-  val layout : t -> PPrint.document
-
-  val show : t -> string
-
-  val print : ?label:string -> t -> unit
-end
-
-module Showable (S : sig
-  type t
-
-  val layout : t -> PPrint.document
-end) : SHOWABLE with type t = S.t = struct
-  type t = S.t
-
-  let layout = S.layout
-
-  let show v =
-    let width = 60 in
-    let buf = Buffer.create 100 in
-    PPrint.ToBuffer.pretty 1. width buf (S.layout v);
-    Buffer.contents buf
-
-  let print ?label v =
-    match label with
-    | Some label -> Caml.print_endline (label ^ ": " ^ show v)
-    | None -> Caml.print_endline (show v)
-end
-
-module type DUMPABLE = sig
-  type t
-
-  val dump : ?label:string -> t -> unit
-
-  val sdump : ?label:string -> t -> string
-end
-
-module Dumpable (S : sig
-  type t
-
-  val sexp_of_t : t -> Sexp.t
-end) : DUMPABLE with type t = S.t = struct
-  type t = S.t
-
-  let dump ?label v =
-    let s = S.sexp_of_t v in
-    match label with
-    | None -> Caml.Format.printf "%a@." Sexp.pp_hum s
-    | Some label -> Caml.Format.printf "%s %a@." label Sexp.pp_hum s
-
-  let sdump ?label v =
-    let s = S.sexp_of_t v in
-    match label with
-    | None -> Caml.Format.asprintf "%a@." Sexp.pp_hum s
-    | Some label -> Caml.Format.asprintf "%s %a@." label Sexp.pp_hum s
-end
-
 let layout_var v =
   let open PPrint in
   let lvl = Option.(v.lvl |> map ~f:Int.to_string |> value ~default:"!") in
@@ -137,7 +153,7 @@ let layout_var v =
 let rec layout_expr' ~names =
   let open PPrint in
   function
-  | E_var name -> string name
+  | E_var p -> Path.layout p
   | E_abs (args, body) ->
     let sep = comma ^^ blank 1 in
     let newline =
@@ -219,7 +235,8 @@ and layout_ty' ~names ty =
     | _ -> false
   in
   let rec layout_ty = function
-    | Ty_const name -> string name
+    | Ty_name p -> Path.layout p
+    | Ty_abstract p -> Path.layout p
     | Ty_arr ([ aty ], rty) ->
       (* Check if we can layout this as simply as [aty -> try] in case of a
          single argument. *)
@@ -234,9 +251,10 @@ and layout_ty' ~names ty =
       parens (separate sep (List.map atys ~f:layout_ty))
       ^^ string " -> "
       ^^ layout_ty rty
-    | Ty_app (fty, atys) ->
+    | Ty_app (ty, atys) ->
       let sep = comma ^^ blank 1 in
-      layout_ty fty ^^ brackets (separate sep (List.map atys ~f:layout_ty))
+      layout_ty' ~names ty
+      ^^ brackets (separate sep (List.map atys ~f:layout_ty))
     | Ty_var var -> (
       let data = Union_find.value var in
       match data.ty with
@@ -263,7 +281,7 @@ and layout_ty_sch' ~names ty_sch =
   | [], ty -> layout_ty' ~names ty
   | vs, ty ->
     let vs = layout_var_prenex' ~names vs in
-    group (vs ^^ layout_ty' ~names ty)
+    group (vs ^^ string " . " ^^ layout_ty' ~names ty)
 
 and layout_var_prenex' ~names vs =
   let open PPrint in
@@ -273,7 +291,105 @@ and layout_var_prenex' ~names vs =
         let v = Union_find.value v in
         string (Names.alloc names v.id))
   in
-  separate sep vs ^^ string " . "
+  separate sep vs
+
+and layout_mexpr' ~names me =
+  let open PPrint in
+  match me with
+  | M_path p -> Path.layout p
+  | M_str mstr ->
+    string "struct"
+    ^^ nest 2 (hardline ^^ layout_mstr' ~names mstr)
+    ^^ hardline
+    ^^ string "end"
+  | M_constr (me, mty) ->
+    parens (layout_mexpr' ~names me ^^ string " : " ^^ layout_mty' ~names mty)
+
+and layout_mstr' ~names items =
+  let open PPrint in
+  let sep = hardline ^^ hardline in
+  separate sep
+    (List.map items ~f:(fun item -> group (layout_mstr_item' ~names item)))
+
+and layout_mstr_item' ~names item =
+  let open PPrint in
+  match item with
+  | Mstr_val (name, ty_sch, expr) ->
+    let ascription =
+      (* We need to layout ty_sch first as it will allocate names for use
+         down the road. *)
+      match ty_sch with
+      | None -> empty
+      | Some ty_sch ->
+        string " :" ^^ nest 4 (break 1 ^^ layout_ty_sch' ~names ty_sch)
+    in
+    group (string "let " ^^ string name ^^ ascription ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_expr' ~names expr)
+  | Mstr_ty (name, Ty_decl_alias (vs, ty)) ->
+    let params =
+      match vs with
+      | [] -> empty
+      | vs -> brackets (layout_var_prenex' ~names vs)
+    in
+    group (string "type " ^^ string name ^^ params ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_ty' ~names ty)
+  | Mstr_ty (name, Ty_decl_abstract _) -> group (string "type " ^^ string name)
+  | Mstr_mexpr (name, M_constr (me, mty)) ->
+    group
+      (string "module "
+      ^^ string name
+      ^^ string " : "
+      ^^ layout_mty' ~names mty
+      ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_mexpr' ~names:(Names.make ()) me)
+  | Mstr_mexpr (name, me) ->
+    group (string "module " ^^ string name ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_mexpr' ~names:(Names.make ()) me)
+  | Mstr_mty (name, mty) ->
+    group (string "module type " ^^ string name ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_mty' ~names:(Names.make ()) mty)
+
+and layout_mty' ~names mty =
+  let open PPrint in
+  match mty with
+  | Mty_path p -> Path.layout p
+  | Mty_sig msig ->
+    string "sig"
+    ^^ nest 2 (hardline ^^ layout_msig' ~names msig)
+    ^^ hardline
+    ^^ string "end"
+
+and layout_msig' ~names items =
+  let open PPrint in
+  let sep = hardline ^^ hardline in
+  separate sep
+    (List.map items ~f:(fun item -> group (layout_msig_item' ~names item)))
+
+and layout_msig_item' ~names item =
+  let open PPrint in
+  match item with
+  | Msig_val (name, ty_sch) ->
+    let ascription =
+      (* We need to layout ty_sch first as it will allocate names for use
+         down the road. *)
+      string " :" ^^ nest 4 (break 1 ^^ layout_ty_sch' ~names ty_sch)
+    in
+    group (string "val " ^^ string name ^^ ascription)
+  | Msig_ty (name, Ty_decl_alias (vs, ty)) ->
+    let params =
+      match vs with
+      | [] -> empty
+      | vs -> brackets (layout_var_prenex' ~names vs)
+    in
+    group (string "type " ^^ string name ^^ params ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_ty' ~names ty)
+  | Msig_ty (name, Ty_decl_abstract _) -> group (string "type " ^^ string name)
+  | Msig_mexpr (name, mty) ->
+    group (string "module " ^^ string name ^^ string " :")
+    ^^ nest 2 (break 1 ^^ layout_mty' ~names:(Names.make ()) mty)
+  | Msig_mty (name, mty) ->
+    group (string "module type " ^^ string name ^^ string " =")
+    ^^ nest 2 (break 1 ^^ layout_mty' ~names:(Names.make ()) mty)
 
 module Expr = struct
   type t = expr
@@ -337,4 +453,16 @@ module Ty_sch = struct
       let sexp_of_t = sexp_of_ty_sch
     end) :
       DUMPABLE with type t := t)
+end
+
+module Mstr = struct
+  type t = mstr
+
+  include (
+    Showable (struct
+      type nonrec t = t
+
+      let layout ty_sch = layout_mstr' ~names:(Names.make ()) ty_sch
+    end) :
+      SHOWABLE with type t := t)
 end
