@@ -1,0 +1,6 @@
+(library
+ (name test_bidi_local)
+ (inline_tests)
+ (preprocess
+  (pps ppx_expect))
+ (libraries base bidi_local))
