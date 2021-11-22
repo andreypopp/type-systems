@@ -289,6 +289,11 @@ let generalize ~lvl ty =
       match Var.ty v with
       | Some ty -> aux ty
       | None -> if Var.lvl v > lvl then vs := v :: !vs else ())
+    | Ty_record row -> aux row
+    (* | Ty_row_empty -> () *)
+    | Ty_row_extend ((_, ty), row) ->
+      aux ty;
+      aux row
   in
   aux ty;
   let ty_sch = (List.dedup_and_sort ~compare:Var.compare !vs, ty) in
@@ -327,7 +332,44 @@ let subsumes constraints =
         | Unequal_lengths -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
         | Ok () -> ());
         aux variance ~sub_ty:sub_ty' ~super_ty:super_ty'
-        (* resolved type vars *)
+      | Ty_record sub_row, Ty_record super_row ->
+        aux variance ~sub_ty:sub_row ~super_ty:super_row
+      (* | Ty_row_empty, Ty_row_empty -> () *)
+      | Ty_row_extend ((name, sub_ty), sub_row), Ty_row_extend _ ->
+        let exception Row_rewrite_error in
+        let rec rewrite = function
+          (* | Ty_row_empty -> raise Row_rewrite_error *)
+          | Ty_bot -> raise Row_rewrite_error
+          | Ty_row_extend ((name', super_ty), super_row) ->
+            if String.(name = name') then (
+              aux variance ~sub_ty ~super_ty;
+              super_row)
+            else Ty_row_extend ((name', super_ty), rewrite super_row)
+          | Ty_var v -> (
+            match Var.ty v with
+            | Some super_row -> rewrite super_row
+            | None ->
+              let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in
+              Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row'));
+              super_row')
+          | _ -> assert false
+        in
+        let subrow_unbound =
+          match sub_row with
+          | Ty_var v -> if Var.is_empty v then Some v else None
+          | _ -> None
+        in
+        let super_row =
+          try rewrite super_ty with
+          | Row_rewrite_error ->
+            Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+        in
+        (match subrow_unbound with
+        | Some v ->
+          if not (Var.is_empty v) then
+            Type_error.raise Error_recursive_record_type
+        | _ -> ());
+        aux variance ~sub_ty:sub_row ~super_ty:super_row
       | Ty_var sub_v, Ty_var super_v -> (
         match (Var.ty sub_v, Var.ty super_v) with
         | None, None ->
@@ -369,6 +411,13 @@ let fresh_fun_ty ~arity v =
   Var.set_ty v (Ty_arr (args_ty, body_ty));
   (args_ty, body_ty)
 
+let fresh_record_ty v =
+  let lvl = Var.lvl v in
+  let row = Ty_var (Var.fresh ~lvl ()) in
+  let ty = Ty_record row in
+  Var.set_ty v ty;
+  ty
+
 let resolve_ty ty =
   match ty with
   | Ty_var v as ty -> Option.value (Var.ty v) ~default:ty
@@ -393,6 +442,7 @@ and synth' ~ctx expr =
     (ty, expr)
   | E_ann (expr, ty_sch) ->
     let ty = instantiate ~env:ctx.env ~lvl:ctx.lvl ty_sch in
+    (* TODO: here we drop E_ann, is this ok? *)
     (ty, check ~ctx expr ty)
   | E_abs (vs, args, body) ->
     let env, vs =
@@ -436,6 +486,47 @@ and synth' ~ctx expr =
     in
     Constraint_set.solve constraints;
     (body_ty, E_app (f, args))
+  | E_record fields ->
+    let row, fields =
+      (* List.fold fields ~init:(Ty_row_empty, []) *)
+      List.fold fields ~init:(Ty_bot, []) ~f:(fun (row, fields) (name, expr) ->
+          let ty, expr = synth ~ctx expr in
+          (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
+    in
+    (Ty_record row, E_record (List.rev fields))
+  | E_record_project (expr, name) ->
+    let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
+    let ty = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
+    let record_ty = Ty_record (Ty_row_extend ((name, ty), row)) in
+    let constraints = Constraint_set.empty () in
+    let expr = check' ~ctx ~constraints expr record_ty in
+    Constraint_set.solve constraints;
+    (ty, E_record_project (expr, name))
+  | E_record_extend (expr, fields) ->
+    let constraints = Constraint_set.empty () in
+    let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
+    let expr = check' ~ctx ~constraints expr (Ty_record row) in
+    let row, fields =
+      List.fold fields ~init:(row, []) ~f:(fun (row, fields) (name, expr) ->
+          let ty, expr = synth ~ctx expr in
+          (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
+    in
+    let ty = Ty_record row in
+    Constraint_set.solve constraints;
+    (ty, E_record_extend (expr, List.rev fields))
+  | E_record_update (expr, fields) ->
+    let constraints = Constraint_set.empty () in
+    let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
+    let row, fields =
+      List.fold fields ~init:(row, []) ~f:(fun (row, fields) (name, expr) ->
+          let ty, expr = synth ~ctx expr in
+          (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
+    in
+    let ty = Ty_record row in
+    let ty', expr = synth ~ctx expr in
+    subsumes constraints (Variance.inv ctx.variance) ~sub_ty:ty ~super_ty:ty';
+    Constraint_set.solve constraints;
+    (ty, E_record_update (expr, List.rev fields))
   | E_lit (Lit_string _) -> (Ty_const "string", expr)
   | E_lit (Lit_int _) -> (Ty_const "int", expr)
   | E_let ((name, expr, e_ty_sch), body) ->

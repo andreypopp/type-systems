@@ -14,8 +14,13 @@ type ty =
   | Ty_app of ty * ty list
   | Ty_nullable of ty
   | Ty_arr of ty list * ty
+  | Ty_record of ty_row
+  (* | Ty_row_empty *)
+  | Ty_row_extend of (name * ty) * ty_row
   | Ty_bot
   | Ty_top
+
+and ty_row = ty
 
 and var = var' Union_find.t
 
@@ -37,6 +42,10 @@ type expr =
   | E_let of (name * expr * ty_sch option) * expr
   | E_lit of lit
   | E_ann of expr * ty_sch
+  | E_record of (name * expr) list
+  | E_record_project of expr * name
+  | E_record_extend of expr * (name * expr) list
+  | E_record_update of expr * (name * expr) list
 [@@deriving sexp_of]
 
 and lit = Lit_string of string | Lit_int of int

@@ -5,9 +5,11 @@ type t =
   | Error_not_a_subtype of ty * ty
   | Error_not_equal of ty * ty
   | Error_recursive_type
+  | Error_recursive_record_type
   | Error_unknown_name of string
   | Error_missing_type_annotation of expr
   | Error_expected_a_function of ty
+  | Error_expected_a_record of ty
   | Error_arity_mismatch
 
 let layout =
@@ -34,6 +36,7 @@ let layout =
          ^^ string "is not equal to"
          ^^ nest 2 (break 1 ^^ ty2)))
   | Error_recursive_type -> return (string "recursive type")
+  | Error_recursive_record_type -> return (string "recursive record type")
   | Error_unknown_name name -> return (string "unknown name: " ^^ string name)
   | Error_missing_type_annotation expr ->
     let* expr = Expr.layout expr in
@@ -41,6 +44,9 @@ let layout =
   | Error_expected_a_function ty ->
     let* ty = Ty.layout ty in
     return (string "expected a function but got: " ^^ ty)
+  | Error_expected_a_record ty ->
+    let* ty = Ty.layout ty in
+    return (string "expected a record but got: " ^^ ty)
   | Error_arity_mismatch -> return (string "arity mismatch")
 
 include (

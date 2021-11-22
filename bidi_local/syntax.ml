@@ -3,6 +3,13 @@ include Syntax0
 
 let rec layout_expr' expr : Layout.layout =
   let open Layout in
+  let is_simple_expr = function
+    | E_var _
+    | E_app _
+    | E_record _ ->
+      true
+    | _ -> false
+  in
   match expr with
   | E_ann (expr, ty_sch) ->
     let* ty_sch = layout_ty_sch' ty_sch in
@@ -94,11 +101,53 @@ let rec layout_expr' expr : Layout.layout =
         | e -> layout_expr' e)
     in
     concat items
+  | E_record fields ->
+    let layout_field (name, expr) =
+      let+ expr = layout_expr' expr in
+      string name ^^ string " = " ^^ expr
+    in
+    let+ fields = Layout.list_map fields ~f:layout_field in
+    let sep = comma ^^ break 1 in
+    group (braces (separate sep fields))
+  | E_record_project (expr, name) ->
+    if is_simple_expr expr then
+      let+ expr = layout_expr' expr in
+      expr ^^ dot ^^ string name
+    else
+      let+ expr = layout_expr' expr in
+      parens expr ^^ dot ^^ string name
+  | E_record_extend (expr, fields) ->
+    let layout_field (name, expr) =
+      let+ expr = layout_expr' expr in
+      string name ^^ string " = " ^^ expr
+    in
+    let* expr = layout_expr' expr in
+    let* fields = Layout.list_map fields ~f:layout_field in
+    let sep = comma ^^ break 1 in
+    return (braces (expr ^^ string " with " ^^ separate sep fields))
+  | E_record_update (expr, fields) ->
+    let layout_field (name, expr) =
+      let+ expr = layout_expr' expr in
+      string name ^^ string " := " ^^ expr
+    in
+    let* expr = layout_expr' expr in
+    let* fields = Layout.list_map fields ~f:layout_field in
+    let sep = comma ^^ break 1 in
+    return (braces (expr ^^ string " with " ^^ separate sep fields))
   | E_lit (Lit_string v) -> return (dquotes (string v))
   | E_lit (Lit_int v) -> return (dquotes (string (Int.to_string v)))
 
 and layout_ty' ty =
   let open Layout in
+  let rec is_ty_row_empty = function
+    (* | Ty_row_empty -> true *)
+    | Ty_bot -> true
+    | Ty_var var -> (
+      match (Union_find.value var).ty with
+      | None -> false
+      | Some ty -> is_ty_row_empty ty)
+    | _ -> false
+  in
   let rec is_ty_arr = function
     | Ty_var var -> (
       match (Union_find.value var).ty with
@@ -139,8 +188,37 @@ and layout_ty' ty =
       match (Union_find.value var).ty with
       | None -> layout_var' var
       | Some ty -> layout_ty ty)
+    | Ty_record ty_row ->
+      let+ ty_row = layout_ty_row ty_row in
+      braces ty_row
+    (* | Ty_row_empty -> return empty *)
+    | Ty_row_extend ((name, ty), next) ->
+      let* field =
+        let+ ty = layout_ty ty in
+        string name ^^ string ": " ^^ ty
+      in
+      if is_ty_row_empty next then return field
+      else
+        let* next = layout_ty next in
+        return (field ^^ string "; " ^^ next)
     | Ty_bot -> return (string "⊥")
     | Ty_top -> return (string "⊤")
+  and layout_ty_row = function
+    | Ty_bot -> return empty
+    | Ty_row_extend ((name, ty), next) ->
+      let* field =
+        let+ ty = layout_ty ty in
+        string name ^^ string ": " ^^ ty
+      in
+      if is_ty_row_empty next then return field
+      else
+        let* next = layout_ty next in
+        return (field ^^ string "; " ^^ next)
+    | Ty_var var -> (
+      match (Union_find.value var).ty with
+      | None -> layout_var' var
+      | Some ty -> layout_ty_row ty)
+    | _ -> assert false
   in
   layout_ty ty
 

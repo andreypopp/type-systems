@@ -38,3 +38,7 @@ let rec apply_ty subst ty =
       match find_var subst v with
       | Some ty -> ty
       | None -> ty))
+  | Ty_record row -> Ty_record (apply_ty subst row)
+  (* | Ty_row_empty -> ty *)
+  | Ty_row_extend ((name, ty), row) ->
+    Ty_row_extend ((name, apply_ty subst ty), apply_ty subst row)

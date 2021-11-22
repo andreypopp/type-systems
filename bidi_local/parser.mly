@@ -27,6 +27,10 @@ let build_ty_sch (vs, env) ty =
 		| Ty_nullable ty -> Ty_nullable (build_ty ty)
 		| Ty_app (fty, atys) -> Ty_app (build_ty fty, List.map atys ~f:build_ty)
 		| Ty_arr (atys, rty) -> Ty_arr (List.map atys ~f:build_ty, build_ty rty)
+    | Ty_record row -> Ty_record (build_ty row)
+    (* | Ty_row_empty -> ty *)
+    | Ty_row_extend ((name, ty), row) ->
+      Ty_row_extend ((name, build_ty ty), build_ty row)
 	in
   vs, build_ty ty
 %}
@@ -99,6 +103,22 @@ simple_expr:
 	| LPAREN e = expr RPAREN { e }
 	| f = simple_expr LPAREN args = flex_list(COMMA, expr) RPAREN
 	  { E_app (f, args) }
+	| LBRACE fs = flex_list(COMMA, record_field) RBRACE
+	  { E_record fs }
+	| LBRACE e = expr WITH fs = nonempty_flex_list(COMMA, record_field) RBRACE
+	  { E_record_extend (e, fs) }
+	| LBRACE e = expr WITH fs = nonempty_flex_list(COMMA, record_field_update) RBRACE
+	  { E_record_update (e, fs) }
+	| e = simple_expr DOT n = IDENT
+	  { E_record_project (e, n) }
+
+record_field:
+    n = IDENT EQUALS e = expr
+    { n, e }
+
+record_field_update:
+    n = IDENT ASSIGN e = expr
+    { n, e }
 
 ident_list:
     xs = nonempty_flex_list(COMMA, IDENT) { xs }
@@ -123,8 +143,22 @@ simple_ty:
 	| LPAREN t = ty RPAREN  { t }
   | f = simple_ty LBRACKET args = nonempty_flex_list(COMMA, ty) RBRACKET
 	  { Ty_app (f, args) }
+	| LBRACE RBRACE
+	  (* { Ty_record Ty_row_empty } *)
+	  { Ty_record Ty_bot }
+	| LBRACE row = ty_row RBRACE
+	  { Ty_record row }
 	| t = simple_ty QUESTION
 	  { Ty.nullable t }
+
+ty_row:
+    n = IDENT
+    { Ty_const n }
+  | n = IDENT COLON ty = ty COMMA?
+    (* { Ty_row_extend ((n, ty), Ty_row_empty) } *)
+    { Ty_row_extend ((n, ty), Ty_bot) }
+  | n = IDENT COLON ty = ty COMMA row = ty_row
+    { Ty_row_extend ((n, ty), row) }
 
 (* Utilities for flexible lists (and its non-empty version).
 

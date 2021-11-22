@@ -79,7 +79,7 @@ let%expect_test "" =
     | |}]
 
 let env =
-  Env.empty
+  env
   |> Env.assume_val "fix" "a . (a -> a) -> a"
   |> Env.assume_val "head" "a . list[a] -> a"
   |> Env.assume_val "tail" "a . list[a] -> list[a]"
@@ -600,3 +600,40 @@ let%expect_test "" =
        in
        apply_curry
        | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    {a = one, b = one}
+    |}
+
+let%expect_test "" =
+  infer ~env
+    {|
+    {a = one, b = one}.a
+    |}
+
+let%expect_test "" =
+  infer ~env
+    {|
+    {a = one, b = one}.b
+    |}
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let update_a[r, a](data : {a : a, r}, v : a) =
+      {data with a := v}
+    in
+    update_a({a = one, b = true}, null)
+    |}
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let update_a[r, a](data : {a : a, r}, v : a) =
+      {data with a := v}
+    in
+    let data = {a = one, b = true} in
+    update_a(data, null)
+    |}

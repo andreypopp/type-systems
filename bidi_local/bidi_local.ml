@@ -63,3 +63,5 @@ module Env = struct
 end
 
 let infer = Infer.infer
+
+let () = Expr.pp_exceptions ()
