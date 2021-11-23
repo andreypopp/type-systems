@@ -219,8 +219,8 @@ end = struct
   and greatest_lower_bound' cs =
     let exception Row_rewrite_error in
     let rec aux a b =
-      (* if Debug.log_solve then *)
-      (*   Caml.Format.printf "GLB %s %s@." (Ty.show a) (Ty.show b); *)
+      if Debug.log_solve then
+        Caml.Format.printf "GLB %s %s@." (Ty.show a) (Ty.show b);
       if phys_equal a b then a
       else
         match (a, b) with
@@ -269,6 +269,8 @@ end = struct
           | Some ty' -> aux ty ty')
         | _, _ -> Ty_bot
     and aux_row a b =
+      if Debug.log_solve then
+        Caml.Format.printf "GLB %s %s@." (Ty.show a) (Ty.show b);
       match (a, b) with
       | Ty_row_empty, Ty_row_empty -> Ty_row_empty
       | Ty_row_extend ((name, ty), a), b ->
@@ -599,7 +601,9 @@ and synth' ~ctx expr =
     let args =
       match
         List.map2 args_tys args ~f:(fun ty arg ->
-            check' ~ctx ~constraints arg ty)
+            check'
+              ~ctx:{ ctx with variance = Variance.inv ctx.variance }
+              ~constraints arg ty)
       with
       | Unequal_lengths -> Type_error.raise Error_arity_mismatch
       | Ok args -> args

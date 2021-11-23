@@ -991,8 +991,9 @@ let%expect_test "" =
     |};
   [%expect
     {|
-    fun r -> choose({ r with x := zero }, { x = one })
-    : { x: int; } -> { x: int; }
+    (fun[r] (r: {x: ⊤, ...r}) ->
+       choose({r with x := zero}, {x = one})
+     : r . {x: ⊤, ...r} -> ⊤)
     | |}]
 
 (*
