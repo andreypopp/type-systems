@@ -601,24 +601,61 @@ let%expect_test "" =
        apply_curry
        | |}]
 
-(*
 let%expect_test "" =
-  infer ~env
-    {|
+  infer ~env {|
     {a = one, b = one}
-    |}
+    |};
+  [%expect {|
+    ({a = one, b = one} : {a: int, b: int})
+    | |}]
 
 let%expect_test "" =
-  infer ~env
-    {|
+  infer ~env {|
     {a = one, b = one}.a
-    |}
+    |};
+  [%expect {|
+    ({a = one, b = one}.a : int)
+    | |}]
+
+let%expect_test "" =
+  infer ~env {|
+    {a = one, b = one}.b
+    |};
+  [%expect {|
+    ({a = one, b = one}.b : int)
+    | |}]
 
 let%expect_test "" =
   infer ~env
     {|
-    {a = one, b = one}.b
-    |}
+    let extend_a[r, a](data : {...r}, v : a) =
+      {data with a = v}
+    in
+    extend_a({}, one)
+    |};
+  [%expect {|
+    (let extend_a : r, a . ({...r}, a) -> {a: a, ...r} =
+       fun[r, a] (data: {...r}, v: a) -> {data with a = v}
+     in
+     extend_a({}, one)
+     : {a: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let extend_a[r, a](data : {...r}, v : a) =
+      {data with a = v}
+    in
+    extend_a({b = one}, one)
+    |};
+  [%expect {|
+    (let extend_a : r, a . ({...r}, a) -> {a: a, ...r} =
+       fun[r, a] (data: {...r}, v: a) -> {data with a = v}
+     in
+     extend_a({b = one}, one)
+     : {a: int, b: int})
+    | |}]
 
 let%expect_test "" =
   infer ~env
@@ -627,7 +664,16 @@ let%expect_test "" =
       {data with a := v}
     in
     update_a({a = one, b = true}, null)
-    |}
+    |};
+  [%expect
+    {|
+    (let update_a : a, r . ({a: a, ...r}, a) -> {a: a, ...r} =
+       fun[r, a] (data: {a: a, ...r}, v: a) ->
+         {data with a := v}
+     in
+     update_a({a = one, b = true}, null)
+     : {a: int?, b: bool})
+    | |}]
 
 let%expect_test "" =
   infer ~env
@@ -636,7 +682,15 @@ let%expect_test "" =
       {data with a := plus(data.a, v)}
     in
     let data = {a = one, b = true} in
-    update_a(data, null)
-    |}
-
-*)
+    update_a(data, one)
+    |};
+  [%expect {|
+    (let update_a :
+         r . ({a: int, ...r}, int) -> {a: int, ...r} =
+       fun[r, a] (data: {a: int, ...r}, v: int) ->
+         {data with a := plus(data.a, v)}
+     in
+     let data : {a: int, b: bool} = {a = one, b = true} in
+     update_a(data, one)
+     : {a: int, b: bool})
+    | |}]

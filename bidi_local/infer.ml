@@ -228,6 +228,9 @@ end = struct
       | Some Contravariant, lower, None, upper ->
         ensure_is_subtype ~sub_ty:lower ~super_ty:upper;
         Var.set_ty v upper
+      | Some Invariant, lower, None, Ty_top ->
+        (* TODO: not sure this case is ok *)
+        Var.set_ty v lower
       | Some Invariant, lower, None, upper ->
         if not (Ty.equal lower upper) then
           Type_error.raise (Error_not_equal (lower, upper));
@@ -302,10 +305,10 @@ let generalize ~lvl ty =
   ty_sch
 
 let subsumes constraints =
-  let rec aux variance ~super_ty ~sub_ty =
+  let exception Row_rewrite_error in
+  let rec aux ~super_ty ~sub_ty =
     if Debug.log_solve then
-      Caml.Format.printf "??? %s %s <: %s@." (Variance.show variance)
-        (Ty.show sub_ty) (Ty.show super_ty);
+      Caml.Format.printf "??? %s <: %s@." (Ty.show sub_ty) (Ty.show super_ty);
     if phys_equal super_ty sub_ty || Ty.equal super_ty sub_ty then ()
     else
       match (sub_ty, super_ty) with
@@ -313,95 +316,85 @@ let subsumes constraints =
         if not (String.equal name name') then
           Type_error.raise_not_a_subtype ~sub_ty ~super_ty
       | Ty_nullable sub_ty', Ty_nullable super_ty' ->
-        aux variance ~super_ty:super_ty' ~sub_ty:sub_ty'
+        aux ~super_ty:super_ty' ~sub_ty:sub_ty'
       | sub_ty', Ty_nullable super_ty' ->
-        aux variance ~super_ty:super_ty' ~sub_ty:sub_ty'
+        aux ~super_ty:super_ty' ~sub_ty:sub_ty'
       | Ty_app (sub_ty', sub_args), Ty_app (super_ty', super_args) -> (
-        aux variance ~super_ty:super_ty' ~sub_ty:sub_ty';
+        aux ~super_ty:super_ty' ~sub_ty:sub_ty';
         match
           List.iter2 super_args sub_args ~f:(fun super_ty' sub_ty' ->
-              aux variance ~super_ty:super_ty' ~sub_ty:sub_ty')
+              aux ~super_ty:super_ty' ~sub_ty:sub_ty')
         with
         | Unequal_lengths -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
         | Ok () -> ())
       | Ty_arr (sub_args, sub_ty'), Ty_arr (super_args, super_ty') ->
         (match
            List.iter2 super_args sub_args ~f:(fun super_ty' sub_ty' ->
-               aux (Variance.inv variance) ~sub_ty:super_ty' ~super_ty:sub_ty')
+               aux ~sub_ty:super_ty' ~super_ty:sub_ty')
          with
         | Unequal_lengths -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
         | Ok () -> ());
-        aux variance ~sub_ty:sub_ty' ~super_ty:super_ty'
-      | Ty_record sub_row, Ty_record super_row ->
-        aux variance ~sub_ty:sub_row ~super_ty:super_row
-      (* | Ty_row_empty, Ty_row_empty -> () *)
-      | Ty_row_extend ((name, sub_ty), sub_row), Ty_row_extend _ ->
-        let exception Row_rewrite_error in
-        let rec rewrite = function
-          (* | Ty_row_empty -> raise Row_rewrite_error *)
-          | Ty_bot -> raise Row_rewrite_error
-          | Ty_row_extend ((name', super_ty), super_row) ->
-            if String.(name = name') then (
-              aux variance ~sub_ty ~super_ty;
-              super_row)
-            else Ty_row_extend ((name', super_ty), rewrite super_row)
-          | Ty_var v -> (
-            match Var.ty v with
-            | Some super_row -> rewrite super_row
-            | None ->
-              let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in
-              Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row'));
-              super_row')
-          | _ -> assert false
-        in
-        let subrow_unbound =
-          match sub_row with
-          | Ty_var v -> if Var.is_empty v then Some v else None
-          | _ -> None
-        in
-        let super_row =
-          try rewrite super_ty with
-          | Row_rewrite_error ->
-            Type_error.raise_not_a_subtype ~sub_ty ~super_ty
-        in
-        (match subrow_unbound with
-        | Some v ->
-          if not (Var.is_empty v) then
-            Type_error.raise Error_recursive_record_type
-        | _ -> ());
-        aux variance ~sub_ty:sub_row ~super_ty:super_row
+        aux ~sub_ty:sub_ty' ~super_ty:super_ty'
+      | Ty_record sub_row, Ty_record super_row -> (
+        try aux_row ~sub_row ~super_row with
+        | Row_rewrite_error -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty)
       | Ty_var sub_v, Ty_var super_v -> (
         match (Var.ty sub_v, Var.ty super_v) with
         | None, None ->
-          Var.set_variance sub_v variance;
-          Var.set_variance super_v variance;
           Var.union
             ~merge_lower:(Constraint_set.least_upper_bound' constraints)
             ~merge_upper:(Constraint_set.greatest_lower_bound' constraints)
             sub_v super_v
         | Some sub_ty, None ->
-          Var.set_variance super_v variance;
           Constraint_set.add constraints super_v (sub_ty, Ty_top)
         | None, Some super_ty ->
-          Var.set_variance sub_v variance;
           Constraint_set.add constraints sub_v (Ty_bot, super_ty)
-        | Some sub_ty, Some super_ty -> aux variance ~sub_ty ~super_ty)
+        | Some sub_ty, Some super_ty -> aux ~sub_ty ~super_ty)
       | Ty_var sub_v, super_ty -> (
         match Var.ty sub_v with
-        | Some sub_ty -> aux variance ~super_ty ~sub_ty
-        | None ->
-          Var.set_variance sub_v variance;
-          Constraint_set.add constraints sub_v (Ty_bot, super_ty))
+        | Some sub_ty -> aux ~super_ty ~sub_ty
+        | None -> Constraint_set.add constraints sub_v (Ty_bot, super_ty))
       | sub_ty, Ty_var super_v -> (
         match Var.ty super_v with
-        | Some super_ty -> aux variance ~super_ty ~sub_ty
-        | None ->
-          Var.set_variance super_v variance;
-          Constraint_set.add constraints super_v (sub_ty, Ty_top))
+        | Some super_ty -> aux ~super_ty ~sub_ty
+        | None -> Constraint_set.add constraints super_v (sub_ty, Ty_top))
       | _, Ty_top -> ()
       | Ty_bot, _ -> ()
       | _ -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+  and aux_row ~sub_row ~super_row =
+    match (sub_row, super_row) with
+    | Ty_row_extend ((name, sub_ty), sub_row), Ty_row_extend _ ->
+      let rec rewrite = function
+        | Ty_bot -> raise Row_rewrite_error
+        | Ty_row_extend ((name', super_ty), super_row) ->
+          if String.(name = name') then (
+            aux ~sub_ty ~super_ty;
+            super_row)
+          else Ty_row_extend ((name', super_ty), rewrite super_row)
+        | Ty_var v -> (
+          match Var.ty v with
+          | Some super_row -> rewrite super_row
+          | None ->
+            let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in
+            Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row'));
+            super_row')
+        | _ -> assert false
+      in
+      let subrow_unbound =
+        match sub_row with
+        | Ty_var v -> if Var.is_empty v then Some v else None
+        | _ -> None
+      in
+      let super_row = rewrite super_row in
+      (match subrow_unbound with
+      | Some v ->
+        if not (Var.is_empty v) then
+          Type_error.raise Error_recursive_record_type
+      | _ -> ());
+      aux_row ~sub_row ~super_row
+    | sub_row, super_row -> aux ~sub_ty:sub_row ~super_ty:super_row
   in
+
   aux
 
 let fresh_fun_ty ~arity v =
@@ -500,11 +493,12 @@ and synth' ~ctx expr =
   | E_record fields ->
     let row, fields =
       (* List.fold fields ~init:(Ty_row_empty, []) *)
-      List.fold fields ~init:(Ty_bot, []) ~f:(fun (row, fields) (name, expr) ->
+      List.fold_right fields ~init:(Ty_bot, [])
+        ~f:(fun (name, expr) (row, fields) ->
           let ty, expr = synth ~ctx expr in
           (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
     in
-    (Ty_record row, E_record (List.rev fields))
+    (Ty_record row, E_record fields)
   | E_record_project (expr, name) ->
     let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
     let ty = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
@@ -535,7 +529,7 @@ and synth' ~ctx expr =
     in
     let ty = Ty_record row in
     let ty', expr = synth ~ctx expr in
-    subsumes constraints (Variance.inv ctx.variance) ~sub_ty:ty ~super_ty:ty';
+    subsumes constraints ~sub_ty:ty ~super_ty:ty';
     Constraint_set.solve constraints;
     (ty, E_record_update (expr, List.rev fields))
   | E_lit (Lit_string _) -> (Ty_const "string", expr)
@@ -581,7 +575,7 @@ and check' ~ctx ~constraints expr ty =
         List.fold2 args args_ty ~init:(env, [])
           ~f:(fun (env, args) (name, ty') ty ->
             Option.iter ty' ~f:(fun ty' ->
-                subsumes constraints ctx.variance ~sub_ty:ty ~super_ty:ty');
+                subsumes constraints ~sub_ty:ty ~super_ty:ty');
             let env = Env.add_val env name ([], ty) in
             (env, (name, Some ty) :: args))
       with
@@ -604,16 +598,16 @@ and check' ~ctx ~constraints expr ty =
     let () =
       match
         List.iter2 args_tys' args_tys ~f:(fun ty' ty ->
-            subsumes constraints ctx.variance ~sub_ty:ty ~super_ty:ty')
+            subsumes constraints ~sub_ty:ty ~super_ty:ty')
       with
       | Unequal_lengths -> Type_error.raise Error_arity_mismatch
       | Ok () -> ()
     in
-    subsumes constraints ctx.variance ~sub_ty:ty' ~super_ty:ty;
+    subsumes constraints ~sub_ty:ty' ~super_ty:ty;
     E_app (f, args)
   | expr ->
     let ty', expr = synth ~ctx expr in
-    subsumes constraints ctx.variance ~sub_ty:ty' ~super_ty:ty;
+    subsumes constraints ~sub_ty:ty' ~super_ty:ty;
     expr
 
 and check ~ctx expr ty =
