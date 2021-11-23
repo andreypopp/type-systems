@@ -463,6 +463,11 @@ and synth' ~ctx expr =
               ty :: args_ty ))
     in
     let body_ty, body = synth ~ctx:{ ctx with env } body in
+    let vs =
+      (* Only keep variables which were not solved during checking args and
+         body. *)
+      List.filter vs ~f:Var.is_empty
+    in
     ( Ty_arr (List.rev args_ty, body_ty),
       E_abs (List.rev vs, List.rev args, body) )
   | E_app (f, args) ->

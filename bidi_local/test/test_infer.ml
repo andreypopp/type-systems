@@ -515,7 +515,7 @@ let%expect_test "" =
     |};
   [%expect
     {|
-    (fun[a, b] (x: (e -> d) -> b) ->
+    (fun[b] (x: (e -> d) -> b) ->
        fun[e, d] (y: e -> d) ->
          let x : b = x(y) in fun[e] (x: e) -> y(x)
      : b, d, e . ((e -> d) -> b) -> (e -> d) -> e -> d)
@@ -633,7 +633,8 @@ let%expect_test "" =
     in
     extend_a({}, one)
     |};
-  [%expect {|
+  [%expect
+    {|
     (let extend_a : r, a . ({...r}, a) -> {a: a, ...r} =
        fun[r, a] (data: {...r}, v: a) -> {data with a = v}
      in
@@ -649,7 +650,8 @@ let%expect_test "" =
     in
     extend_a({b = one}, one)
     |};
-  [%expect {|
+  [%expect
+    {|
     (let extend_a : r, a . ({...r}, a) -> {a: a, ...r} =
        fun[r, a] (data: {...r}, v: a) -> {data with a = v}
      in
@@ -684,13 +686,28 @@ let%expect_test "" =
     let data = {a = one, b = true} in
     update_a(data, one)
     |};
-  [%expect {|
+  [%expect
+    {|
     (let update_a :
          r . ({a: int, ...r}, int) -> {a: int, ...r} =
-       fun[r, a] (data: {a: int, ...r}, v: int) ->
+       fun[r] (data: {a: int, ...r}, v: int) ->
          {data with a := plus(data.a, v)}
      in
      let data : {a: int, b: bool} = {a = one, b = true} in
      update_a(data, one)
      : {a: int, b: bool})
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let plusg[a](a : a, b : a) = plus(a, b) in
+    plusg(one, one)
+    |};
+  [%expect {|
+    (let plusg : (int, int) -> int =
+       fun (a: int, b: int) -> plus(a, b)
+     in
+     plusg(one, one)
+     : int)
     | |}]
