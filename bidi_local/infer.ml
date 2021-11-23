@@ -36,8 +36,8 @@ end = struct
     { vals = Map.empty (module String); vars = Map.empty (module String) }
 
   let build_ty_subst ?(init = Ty_subst.empty) env =
-    Map.fold env.vars ~init ~f:(fun ~key ~data subst ->
-        Ty_subst.add_name subst key (Ty.var data))
+    Map.fold env.vars ~init ~f:(fun ~key:name ~data:v subst ->
+        Ty_subst.add_name subst name v)
 end
 
 module Constraint_set : sig
@@ -244,7 +244,7 @@ type ctx = { env : Env.t; lvl : lvl; variance : Variance.t }
     It does so by substituting all generic type variables with fresh type
     variables at specific level [lvl].
   *)
-let instantiate ?(val_kind = Env.Val_local) ?env ~lvl ty_sch =
+let instantiate ?(val_kind = Env.Val_local) ?env ~lvl ~variance ty_sch =
   let vs, ty = ty_sch in
   let subst =
     List.fold vs ~init:Ty_subst.empty ~f:(fun subst v ->
@@ -253,14 +253,14 @@ let instantiate ?(val_kind = Env.Val_local) ?env ~lvl ty_sch =
           | Env.Val_local -> Var.refresh ~lvl v
           | Env.Val_top -> Var.fresh ~lvl ()
         in
-        Ty_subst.add_var subst v (Ty_var v'))
+        Ty_subst.add_var subst v v')
   in
   let subst =
     match env with
     | None -> subst
     | Some env -> Env.build_ty_subst ~init:subst env
   in
-  let ty = Ty_subst.apply_ty subst ty in
+  let ty = Ty_subst.apply_ty ~variance subst ty in
   if Debug.log_instantiate then
     Caml.Format.printf "INST lvl:%i %s@." lvl (Ty.show ty);
   ty
@@ -437,11 +437,14 @@ and synth' ~ctx expr =
     let ty =
       match Env.find_val ctx.env name with
       | None -> Type_error.raise (Error_unknown_name name)
-      | Some (val_kind, ty_sch) -> instantiate ~val_kind ~lvl:ctx.lvl ty_sch
+      | Some (val_kind, ty_sch) ->
+        instantiate ~val_kind ~lvl:ctx.lvl ~variance:ctx.variance ty_sch
     in
     (ty, expr)
   | E_ann (expr, ty_sch) ->
-    let ty = instantiate ~env:ctx.env ~lvl:ctx.lvl ty_sch in
+    let ty =
+      instantiate ~env:ctx.env ~lvl:ctx.lvl ~variance:ctx.variance ty_sch
+    in
     (* TODO: here we drop E_ann, is this ok? *)
     (ty, check ~ctx expr ty)
   | E_abs (vs, args, body) ->
@@ -457,7 +460,11 @@ and synth' ~ctx expr =
           | None ->
             Type_error.raise (Error_missing_type_annotation (E_var name))
           | Some ty ->
-            let ty = instantiate ~lvl:ctx.lvl ~env ([], ty) in
+            let ty =
+              instantiate ~env ~lvl:ctx.lvl
+                ~variance:(Variance.inv ctx.variance)
+                ([], ty)
+            in
             ( Env.add_val env name ([], ty),
               (name, Some ty) :: args,
               ty :: args_ty ))
@@ -534,7 +541,10 @@ and synth' ~ctx expr =
       match e_ty_sch with
       | None -> synth ~ctx:{ ctx with lvl = ctx.lvl + 1 } expr
       | Some e_ty_sch ->
-        let e_ty = instantiate ~env:ctx.env ~lvl:(ctx.lvl + 1) e_ty_sch in
+        let e_ty =
+          instantiate ~env:ctx.env ~lvl:(ctx.lvl + 1) ~variance:ctx.variance
+            e_ty_sch
+        in
         (e_ty, check ~ctx:{ ctx with lvl = ctx.lvl + 1 } expr e_ty)
     in
     let e_ty_sch = generalize ~lvl:ctx.lvl e_ty in

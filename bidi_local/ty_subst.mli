@@ -7,8 +7,8 @@ type t
 
 val empty : t
 
-val add_var : t -> var -> ty -> t
+val add_var : t -> var -> var -> t
 
-val add_name : t -> name -> ty -> t
+val add_name : t -> name -> var -> t
 
-val apply_ty : t -> ty -> ty
+val apply_ty : variance:Variance.t -> t -> ty -> ty
