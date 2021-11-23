@@ -192,15 +192,7 @@ and layout_ty' ty =
       let+ ty_row = layout_ty_row ty_row in
       braces ty_row
     (* | Ty_row_empty -> return empty *)
-    | Ty_row_extend ((name, ty), next) ->
-      let* field =
-        let+ ty = layout_ty ty in
-        string name ^^ string ": " ^^ ty
-      in
-      if is_ty_row_empty next then return field
-      else
-        let* next = layout_ty next in
-        return (field ^^ string "; " ^^ next)
+    | Ty_row_extend _ as ty -> layout_ty_row ty
     | Ty_bot -> return (string "⊥")
     | Ty_top -> return (string "⊤")
   and layout_ty_row = function
@@ -212,12 +204,15 @@ and layout_ty' ty =
       in
       if is_ty_row_empty next then return field
       else
-        let* next = layout_ty next in
-        return (field ^^ string "; " ^^ next)
+        let* next = layout_ty_row next in
+        return (field ^^ string ", " ^^ next)
     | Ty_var var -> (
       match (Union_find.value var).ty with
-      | None -> layout_var' var
+      | None ->
+        let+ var = layout_var' var in
+        string "..." ^^ var
       | Some ty -> layout_ty_row ty)
+    | Ty_const name -> return (string name)
     | _ -> assert false
   in
   layout_ty ty
