@@ -424,7 +424,42 @@ let generalize ~lvl ty =
     Caml.Format.printf "GENR lvl:%i %s@." lvl (Ty_sch.show ty_sch);
   ty_sch
 
-let subsumes constraints =
+let rec promote ~lvl (ty : ty) =
+  match ty with
+  | Ty_const _ -> ty
+  | Ty_var v -> (
+    match Var.ty v with
+    | None -> if Var.lvl v > lvl then Ty_top else ty
+    | Some ty -> promote ~lvl ty)
+  | Ty_app (ty, args) ->
+    Ty_app (promote ~lvl ty, List.map args ~f:(promote ~lvl))
+  | Ty_nullable ty -> Ty_nullable (promote ~lvl ty)
+  | Ty_arr (args, ty) -> Ty_arr (List.map args ~f:(demote ~lvl), promote ~lvl ty)
+  | Ty_record row -> Ty_record (promote ~lvl row)
+  | Ty_row_empty -> ty
+  | Ty_row_extend ((name, ty), row) ->
+    Ty_row_extend ((name, promote ~lvl ty), promote ~lvl row)
+  | Ty_bot -> ty
+  | Ty_top -> ty
+
+and demote ~lvl (ty : ty) =
+  match ty with
+  | Ty_const _ -> ty
+  | Ty_var v -> (
+    match Var.ty v with
+    | None -> if Var.lvl v > lvl then Ty_bot else ty
+    | Some ty -> demote ~lvl ty)
+  | Ty_app (ty, args) -> Ty_app (promote ~lvl ty, List.map args ~f:(demote ~lvl))
+  | Ty_nullable ty -> Ty_nullable (demote ~lvl ty)
+  | Ty_arr (args, ty) -> Ty_arr (List.map args ~f:(promote ~lvl), demote ~lvl ty)
+  | Ty_record row -> Ty_record (demote ~lvl row)
+  | Ty_row_empty -> ty
+  | Ty_row_extend ((name, ty), row) ->
+    Ty_row_extend ((name, demote ~lvl ty), demote ~lvl row)
+  | Ty_bot -> ty
+  | Ty_top -> ty
+
+let subsumes ~lvl constraints =
   let exception Row_rewrite_error in
   let rec aux ~super_ty ~sub_ty =
     if Debug.log_solve then
@@ -466,18 +501,20 @@ let subsumes constraints =
             ~merge_upper:(Constraint_set.greatest_lower_bound' constraints)
             sub_v super_v
         | Some sub_ty, None ->
-          Constraint_set.add constraints super_v (sub_ty, Ty_top)
+          Constraint_set.add constraints super_v (promote ~lvl sub_ty, Ty_top)
         | None, Some super_ty ->
-          Constraint_set.add constraints sub_v (Ty_bot, super_ty)
+          Constraint_set.add constraints sub_v (Ty_bot, demote ~lvl super_ty)
         | Some sub_ty, Some super_ty -> aux ~sub_ty ~super_ty)
       | Ty_var sub_v, super_ty -> (
         match Var.ty sub_v with
         | Some sub_ty -> aux ~super_ty ~sub_ty
-        | None -> Constraint_set.add constraints sub_v (Ty_bot, super_ty))
+        | None ->
+          Constraint_set.add constraints sub_v (Ty_bot, demote ~lvl super_ty))
       | sub_ty, Ty_var super_v -> (
         match Var.ty super_v with
         | Some super_ty -> aux ~super_ty ~sub_ty
-        | None -> Constraint_set.add constraints super_v (sub_ty, Ty_top))
+        | None ->
+          Constraint_set.add constraints super_v (promote ~lvl sub_ty, Ty_top))
       | _, Ty_top -> ()
       | Ty_bot, _ -> ()
       | _ -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
@@ -673,7 +710,7 @@ and synth' ~ctx expr =
     in
     let ty = Ty_record row in
     let ty', expr = synth ~ctx expr in
-    subsumes constraints ~sub_ty:ty ~super_ty:ty';
+    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty';
     Constraint_set.solve constraints;
     (ty, E_record_update (expr, List.rev fields))
   | E_lit (Lit_string _) -> (Ty_const "string", expr)
@@ -719,7 +756,7 @@ and check' ~ctx ~constraints expr ty =
         List.fold2 args args_ty ~init:(env, [])
           ~f:(fun (env, args) (name, ty') ty ->
             Option.iter ty' ~f:(fun ty' ->
-                subsumes constraints ~sub_ty:ty ~super_ty:ty');
+                subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty');
             let env = Env.add_val env name ([], ty) in
             (env, (name, Some ty) :: args))
       with
@@ -742,16 +779,16 @@ and check' ~ctx ~constraints expr ty =
     let () =
       match
         List.iter2 args_tys' args_tys ~f:(fun ty' ty ->
-            subsumes constraints ~sub_ty:ty ~super_ty:ty')
+            subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty')
       with
       | Unequal_lengths -> Type_error.raise Error_arity_mismatch
       | Ok () -> ()
     in
-    subsumes constraints ~sub_ty:ty' ~super_ty:ty;
+    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty' ~super_ty:ty;
     E_app (f, args)
   | expr ->
     let ty', expr = synth ~ctx expr in
-    subsumes constraints ~sub_ty:ty' ~super_ty:ty;
+    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty' ~super_ty:ty;
     expr
 
 and check ~ctx expr ty =

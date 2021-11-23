@@ -248,12 +248,13 @@ let%expect_test "" =
        | |}]
 
 let%expect_test "" =
-  infer ~env "(fun x -> let y = fun (z : b) -> z in y : a, b . a -> b -> b)";
+  (* TODO: missing b variable here *)
+  infer ~env "(fun x -> let y = fun[b](z : b) -> z in y : a, b . a -> b -> b)";
   [%expect
     {|
        (fun (x: a) ->
-          let y : b -> b = fun (z: b) -> z in y
-        : a . a -> b -> b)
+          let y : b/1 . b/1 -> b/1 = fun[b/1] (z: b/1) -> z in y
+        : a, b . a -> b -> b)
        | |}]
 
 let%expect_test "" =
