@@ -133,7 +133,7 @@ let occurs_check_adjust_lvl v =
           Type_error.raise Error_recursive_type
         else v.lvl <- merge_lvl v.lvl other_var.lvl)
     | Ty_record row -> occurs_check_ty row
-    (* | Ty_row_empty -> () *)
+    | Ty_row_empty -> ()
     | Ty_row_extend ((_name, ty), row) ->
       occurs_check_ty ty;
       occurs_check_ty row

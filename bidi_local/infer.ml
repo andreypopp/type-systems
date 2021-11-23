@@ -111,36 +111,92 @@ end = struct
     v'.upper <- greatest_lower_bound' cs v'.upper upper
 
   (** [least_upper_bound' a b] computes a Least-Upper-Bound of [a] and [b]. *)
-  and least_upper_bound' cs a b =
-    (* Caml.Format.printf "LUB %s %s@." (Ty.show a) (Ty.show b); *)
-    if phys_equal a b then a
-    else
+  and least_upper_bound' cs =
+    let exception Row_rewrite_error in
+    let rec aux a b =
+      if Debug.log_solve then
+        Caml.Format.printf "LUB %s %s@." (Ty.show a) (Ty.show b);
+      if phys_equal a b then a
+      else
+        match (a, b) with
+        | _, Ty_top
+        | Ty_top, _ ->
+          Ty_top
+        | a, Ty_bot
+        | Ty_bot, a ->
+          a
+        | Ty_const aname, Ty_const bname ->
+          if String.equal aname bname then a else Ty_top
+        | Ty_arr (aargs, aty), Ty_arr (bargs, bty) -> (
+          match List.map2 aargs bargs ~f:(greatest_lower_bound' cs) with
+          | Unequal_lengths -> Ty_top
+          | Ok args -> Ty_arr (args, aux aty bty))
+        | Ty_app (aty, aargs), Ty_app (bty, bargs) -> (
+          match List.map2 aargs bargs ~f:aux with
+          | Unequal_lengths -> Ty_top
+          | Ok args -> Ty_app (aux aty bty, args))
+        | Ty_record a, Ty_record b -> (
+          try Ty_record (aux_row a b) with
+          | Row_rewrite_error -> Ty_top)
+        | Ty_row_empty, Ty_row_empty -> aux_row a b
+        | Ty_row_extend _, Ty_row_extend _ -> aux_row a b
+        | Ty_nullable a, b -> Ty.nullable (aux a b)
+        | a, Ty_nullable b -> Ty.nullable (aux a b)
+        | Ty_var v1, Ty_var v2 -> (
+          match (Var.ty v1, Var.ty v2) with
+          | None, None ->
+            Var.union ~merge_lower:aux ~merge_upper:(greatest_lower_bound' cs)
+              v1 v2;
+            a
+          | Some a, Some b -> aux a b
+          | None, Some ty ->
+            add cs v1 (ty, Ty_top);
+            ty
+          | Some ty, None ->
+            add cs v2 (ty, Ty_top);
+            ty)
+        | Ty_var v, ty
+        | ty, Ty_var v -> (
+          match Var.ty v with
+          | None ->
+            add cs v (ty, Ty_top);
+            ty
+          | Some ty' -> aux ty ty')
+        | _, _ -> Ty_top
+    and aux_row a b =
+      if Debug.log_solve then
+        Caml.Format.printf "LUB <%s> <%s>@." (Ty.show a) (Ty.show b);
       match (a, b) with
-      | _, Ty_top
-      | Ty_top, _ ->
-        Ty_top
-      | a, Ty_bot
-      | Ty_bot, a ->
-        a
-      | Ty_const aname, Ty_const bname ->
-        if String.equal aname bname then a else Ty_top
-      | Ty_arr (aargs, aty), Ty_arr (bargs, bty) -> (
-        match List.map2 aargs bargs ~f:(greatest_lower_bound' cs) with
-        | Unequal_lengths -> Ty_top
-        | Ok args -> Ty_arr (args, least_upper_bound' cs aty bty))
-      | Ty_app (aty, aargs), Ty_app (bty, bargs) -> (
-        match List.map2 aargs bargs ~f:(least_upper_bound' cs) with
-        | Unequal_lengths -> Ty_top
-        | Ok args -> Ty_app (least_upper_bound' cs aty bty, args))
-      | Ty_nullable a, b -> Ty.nullable (least_upper_bound' cs a b)
-      | a, Ty_nullable b -> Ty.nullable (least_upper_bound' cs a b)
+      | Ty_row_empty, Ty_row_empty -> Ty_row_empty
+      | Ty_row_extend ((name, ty), a), b ->
+        let rec rewrite = function
+          | Ty_row_empty -> raise Row_rewrite_error
+          | Ty_row_extend ((name', ty'), b) ->
+            if String.(name = name') then
+              let ty = aux ty ty' in
+              (ty, b)
+            else
+              let ty, b = rewrite b in
+              (ty, Ty_row_extend ((name', ty'), b))
+          | Ty_var v -> (
+            match Var.ty v with
+            | Some b -> rewrite b
+            | None ->
+              raise Row_rewrite_error
+              (* let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in *)
+              (* Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row')); *)
+              (* super_row' *))
+          | _ -> assert false
+        in
+        let ty, b = rewrite b in
+        Ty_row_extend ((name, ty), aux_row a b)
       | Ty_var v1, Ty_var v2 -> (
         match (Var.ty v1, Var.ty v2) with
         | None, None ->
-          Var.union ~merge_lower:(least_upper_bound' cs)
-            ~merge_upper:(greatest_lower_bound' cs) v1 v2;
+          Var.union ~merge_lower:aux ~merge_upper:(greatest_lower_bound' cs) v1
+            v2;
           a
-        | Some a, Some b -> least_upper_bound' cs a b
+        | Some a, Some b -> aux_row a b
         | None, Some ty ->
           add cs v1 (ty, Ty_top);
           ty
@@ -151,42 +207,98 @@ end = struct
       | ty, Ty_var v -> (
         match Var.ty v with
         | None ->
-          add cs v (ty, Ty_top);
-          ty
-        | Some ty' -> least_upper_bound' cs ty ty')
-      | _, _ -> Ty_top
+          raise Row_rewrite_error
+          (* add cs v (ty, Ty_top); *)
+          (* ty *)
+        | Some ty' -> aux_row ty ty')
+      | _, _ -> raise Row_rewrite_error
+    in
+    aux
 
   (** [greatest_lower_bound' a b] computes a Greatest-Lower-Bound of [a] and [b]. *)
-  and greatest_lower_bound' cs a b =
-    (* Caml.Format.printf "GLB %s %s@." (Ty.show a) (Ty.show b); *)
-    if phys_equal a b then a
-    else
+  and greatest_lower_bound' cs =
+    let exception Row_rewrite_error in
+    let rec aux a b =
+      (* if Debug.log_solve then *)
+      (*   Caml.Format.printf "GLB %s %s@." (Ty.show a) (Ty.show b); *)
+      if phys_equal a b then a
+      else
+        match (a, b) with
+        | a, Ty_top
+        | Ty_top, a ->
+          a
+        | _, Ty_bot
+        | Ty_bot, _ ->
+          Ty_bot
+        | Ty_const aname, Ty_const bname ->
+          if String.equal aname bname then a else Ty_bot
+        | Ty_arr (aargs, aty), Ty_arr (bargs, bty) -> (
+          match List.map2 aargs bargs ~f:(least_upper_bound' cs) with
+          | Unequal_lengths -> Ty_bot
+          | Ok args -> Ty_arr (args, aux aty bty))
+        | Ty_app (aty, aargs), Ty_app (bty, bargs) -> (
+          match List.map2 aargs bargs ~f:aux with
+          | Unequal_lengths -> Ty_bot
+          | Ok args -> Ty_app (aux aty bty, args))
+        | Ty_record a, Ty_record b -> (
+          try Ty_record (aux_row a b) with
+          | Row_rewrite_error -> Ty_bot)
+        | Ty_row_empty, Ty_row_empty -> aux_row a b
+        | Ty_row_extend _, Ty_row_extend _ -> aux_row a b
+        | Ty_nullable a, b -> aux a b
+        | a, Ty_nullable b -> aux a b
+        | Ty_var v1, Ty_var v2 -> (
+          match (Var.ty v1, Var.ty v2) with
+          | None, None ->
+            Var.union ~merge_lower:(least_upper_bound' cs) ~merge_upper:aux v1
+              v2;
+            a
+          | Some a, Some b -> aux a b
+          | None, Some ty ->
+            add cs v1 (Ty_bot, ty);
+            ty
+          | Some ty, None ->
+            add cs v2 (Ty_bot, ty);
+            ty)
+        | Ty_var v, ty
+        | ty, Ty_var v -> (
+          match Var.ty v with
+          | None ->
+            add cs v (Ty_bot, ty);
+            ty
+          | Some ty' -> aux ty ty')
+        | _, _ -> Ty_bot
+    and aux_row a b =
       match (a, b) with
-      | a, Ty_top
-      | Ty_top, a ->
-        a
-      | _, Ty_bot
-      | Ty_bot, _ ->
-        Ty_bot
-      | Ty_const aname, Ty_const bname ->
-        if String.equal aname bname then a else Ty_bot
-      | Ty_arr (aargs, aty), Ty_arr (bargs, bty) -> (
-        match List.map2 aargs bargs ~f:(least_upper_bound' cs) with
-        | Unequal_lengths -> Ty_bot
-        | Ok args -> Ty_arr (args, greatest_lower_bound' cs aty bty))
-      | Ty_app (aty, aargs), Ty_app (bty, bargs) -> (
-        match List.map2 aargs bargs ~f:(greatest_lower_bound' cs) with
-        | Unequal_lengths -> Ty_bot
-        | Ok args -> Ty_app (greatest_lower_bound' cs aty bty, args))
-      | Ty_nullable a, b -> greatest_lower_bound' cs a b
-      | a, Ty_nullable b -> greatest_lower_bound' cs a b
+      | Ty_row_empty, Ty_row_empty -> Ty_row_empty
+      | Ty_row_extend ((name, ty), a), b ->
+        let rec rewrite = function
+          | Ty_row_empty -> raise Row_rewrite_error
+          | Ty_row_extend ((name', ty'), b) ->
+            if String.(name = name') then
+              let ty = aux ty ty' in
+              (ty, b)
+            else
+              let ty, b = rewrite b in
+              (ty, Ty_row_extend ((name', ty'), b))
+          | Ty_var v -> (
+            match Var.ty v with
+            | Some b -> rewrite b
+            | None ->
+              raise Row_rewrite_error
+              (* let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in *)
+              (* Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row')); *)
+              (* super_row' *))
+          | _ -> assert false
+        in
+        let ty, b = rewrite b in
+        Ty_row_extend ((name, ty), aux_row a b)
       | Ty_var v1, Ty_var v2 -> (
         match (Var.ty v1, Var.ty v2) with
         | None, None ->
-          Var.union ~merge_lower:(least_upper_bound' cs)
-            ~merge_upper:(greatest_lower_bound' cs) v1 v2;
+          Var.union ~merge_lower:(least_upper_bound' cs) ~merge_upper:aux v1 v2;
           a
-        | Some a, Some b -> greatest_lower_bound' cs a b
+        | Some a, Some b -> aux a b
         | None, Some ty ->
           add cs v1 (Ty_bot, ty);
           ty
@@ -199,8 +311,10 @@ end = struct
         | None ->
           add cs v (Ty_bot, ty);
           ty
-        | Some ty' -> greatest_lower_bound' cs ty ty')
+        | Some ty' -> aux_row ty ty')
       | _, _ -> Ty_bot
+    in
+    aux
 
   let is_subtype ~sub_ty ~super_ty =
     let least_upper_bound a b =
@@ -293,7 +407,7 @@ let generalize ~lvl ty =
       | Some ty -> aux ty
       | None -> if Var.lvl v > lvl then vs := v :: !vs else ())
     | Ty_record row -> aux row
-    (* | Ty_row_empty -> () *)
+    | Ty_row_empty -> ()
     | Ty_row_extend ((_, ty), row) ->
       aux ty;
       aux row
@@ -363,9 +477,10 @@ let subsumes constraints =
       | _ -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
   and aux_row ~sub_row ~super_row =
     match (sub_row, super_row) with
+    | Ty_row_empty, Ty_row_extend _ -> raise Row_rewrite_error
     | Ty_row_extend ((name, sub_ty), sub_row), Ty_row_extend _ ->
       let rec rewrite = function
-        | Ty_bot -> raise Row_rewrite_error
+        | Ty_row_empty -> raise Row_rewrite_error
         | Ty_row_extend ((name', super_ty), super_row) ->
           if String.(name = name') then (
             aux ~sub_ty ~super_ty;
@@ -498,7 +613,7 @@ and synth' ~ctx expr =
   | E_record fields ->
     let row, fields =
       (* List.fold fields ~init:(Ty_row_empty, []) *)
-      List.fold_right fields ~init:(Ty_bot, [])
+      List.fold_right fields ~init:(Ty_row_empty, [])
         ~f:(fun (name, expr) (row, fields) ->
           let ty, expr = synth ~ctx expr in
           (Ty_row_extend ((name, ty), row), (name, expr) :: fields))

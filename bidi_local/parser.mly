@@ -28,7 +28,7 @@ let build_ty_sch (vs, env) ty =
 		| Ty_app (fty, atys) -> Ty_app (build_ty fty, List.map atys ~f:build_ty)
 		| Ty_arr (atys, rty) -> Ty_arr (List.map atys ~f:build_ty, build_ty rty)
     | Ty_record row -> Ty_record (build_ty row)
-    (* | Ty_row_empty -> ty *)
+    | Ty_row_empty -> ty
     | Ty_row_extend ((name, ty), row) ->
       Ty_row_extend ((name, build_ty ty), build_ty row)
 	in
@@ -144,8 +144,7 @@ simple_ty:
   | f = simple_ty LBRACKET args = nonempty_flex_list(COMMA, ty) RBRACKET
 	  { Ty_app (f, args) }
 	| LBRACE RBRACE
-	  (* { Ty_record Ty_row_empty } *)
-	  { Ty_record Ty_bot }
+	  { Ty_record Ty_row_empty }
 	| LBRACE row = ty_row RBRACE
 	  { Ty_record row }
 	| t = simple_ty QUESTION
@@ -155,8 +154,7 @@ ty_row:
     ELLIPSIS n = IDENT
     { Ty_const n }
   | n = IDENT COLON ty = ty COMMA?
-    (* { Ty_row_extend ((n, ty), Ty_row_empty) } *)
-    { Ty_row_extend ((n, ty), Ty_bot) }
+    { Ty_row_extend ((n, ty), Ty_row_empty) }
   | n = IDENT COLON ty = ty COMMA row = ty_row
     { Ty_row_extend ((n, ty), row) }
 

@@ -704,10 +704,406 @@ let%expect_test "" =
     let plusg[a](a : a, b : a) = plus(a, b) in
     plusg(one, one)
     |};
-  [%expect {|
+  [%expect
+    {|
     (let plusg : (int, int) -> int =
        fun (a: int, b: int) -> plus(a, b)
      in
      plusg(one, one)
      : int)
     | |}]
+
+let%expect_test "" =
+  infer ~env "{}";
+  [%expect {|
+    ({} : {})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "({}).x";
+  [%expect {|
+    ERROR: type {} is not a subtype of {x: _2, ..._1}
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{a = one}";
+  [%expect {|
+    ({a = one} : {a: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{a = one, b = true}";
+  [%expect {|
+    ({a = one, b = true} : {a: int, b: bool})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{b = true, a = one}";
+  [%expect {|
+    ({b = true, a = one} : {b: bool, a: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "({a = one, b = true}).a";
+  [%expect {|
+    ({a = one, b = true}.a : int)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "({a = one, b = true}).b";
+  [%expect {|
+    ({a = one, b = true}.b : bool)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "({a = one, b = true}).c";
+  [%expect
+    {|
+    ERROR: type
+      {a: int, b: bool}
+    is not a subtype of
+      {c: _2, a: int, b: bool, ..._4}
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{f = fun[a](x: a) -> x}";
+  [%expect {|
+    ({f = fun[a] (x: a) -> x} : a . {f: a -> a})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let r = {a = id, b = succ} in choose(r.a, r.b)";
+  [%expect
+    {|
+    (let r : b . {a: b -> b, b: int -> int} =
+       {a = id, b = succ}
+     in
+     choose(r.a, r.b)
+     : int -> int)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let r = {a = id, b = fun[a](x: a) -> x} in choose(r.a, r.b)";
+  [%expect
+    {|
+    (let r : a/1, b/2 . {a: b/2 -> b/2, b: a/1 -> a/1} =
+       {a = id, b = fun[a/1] (x: a/1) -> x}
+     in
+     choose(r.a, r.b)
+     : a . a -> a)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "choose({a = one}, {})";
+  [%expect {|
+    (choose({a = one}, {}) : ⊤)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{ { {} with y = one } with x = zero }";
+  [%expect
+    {|
+    ({{{} with y = one} with x = zero} : {x: int, y: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    "choose({ { {} with y = one } with x = zero }, {x = one, y = zero})";
+  [%expect
+    {|
+    (choose(
+       {{{} with y = one} with x = zero},
+       {x = one, y = zero})
+     : {x: int, y: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{ {x = one } with x = true }";
+  [%expect {|
+    ({{x = one} with x = true} : {x: bool, x: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{ {x = one } with x := true }";
+  [%expect {|
+    ERROR: type bool is not a subtype of int
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let a = {} in {a with b := one}";
+  [%expect {|
+    ERROR: type b: int, ..._1 is not a subtype of
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let a = {x = one} in ({a with x = true}).x";
+  [%expect
+    {|
+    (let a : {x: int} = {x = one} in
+     ({a with x = true}).x
+     : bool)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let a = {x = one} in ({a with x := true}).x";
+  [%expect {|
+    ERROR: type bool is not a subtype of int
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let a = {x = one} in a.y";
+  [%expect
+    {|
+    ERROR: type {x: int} is not a subtype of {y: _2, x: int, ..._3}
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun[a](r: {...a}) -> {r with x = one}";
+  [%expect
+    {|
+    (fun[a] (r: {...a}) -> {r with x = one}
+     : a . {...a} -> {x: int, ...a})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun[r, x](r: {x: x, ...r}) -> {r with x := one}";
+  [%expect
+    {|
+    (fun[r] (r: {x: ⊤, ...r}) -> {r with x := one}
+     : r . {x: ⊤, ...r} -> {x: int, ...r})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let addx = fun[r](r: {...r}) -> {r with x = one} in addx({})";
+  [%expect
+    {|
+    (let addx : r . {...r} -> {x: int, ...r} =
+       fun[r] (r: {...r}) -> {r with x = one}
+     in
+     addx({})
+     : {x: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    "let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in addx({})";
+  [%expect {|
+    ERROR: type {} is not a subtype of {x: ⊤, ...=_6}
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    "let addx = fun[r](r: {...r}) -> {r with x = one} in addx({x = one})";
+  [%expect
+    {|
+    (let addx : r . {...r} -> {x: int, ...r} =
+       fun[r] (r: {...r}) -> {r with x = one}
+     in
+     addx({x = one})
+     : {x: int, x: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in
+    addx({x = one})
+    |};
+  [%expect
+    {|
+    (let addx : r . {x: ⊤, ...r} -> {x: int, ...r} =
+       fun[r] (r: {x: ⊤, ...r}) -> {r with x := one}
+     in
+     addx({x = one})
+     : {x: int})
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun[x, r](r: {x: x, ...r}) -> r.x";
+  [%expect
+    {|
+    (fun[x, r] (r: {x: x, ...r}) -> r.x
+     : x, r . {x: x, ...r} -> x)
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let get_x = fun[x, r](r: {x: x, ...r}) -> r.x in
+    get_x({y = one, x = zero})
+    |};
+  [%expect
+    {|
+    (let get_x : x, r . {x: x, ...r} -> x =
+       fun[x, r] (r: {x: x, ...r}) -> r.x
+     in
+     get_x({y = one, x = zero})
+     : int)
+    | |}]
+
+let%expect_test "" =
+  infer ~env
+    {|
+    let get_x = fun[x, r](r: {x: x, ...r}) -> r.x in
+    get_x({y = one, z = true})
+    |};
+  [%expect
+    {|
+    ERROR: type
+      {y: int, z: bool}
+    is not a subtype of
+      {x: =_7, y: int, z: bool, ..._10}
+    | |}]
+
+(*
+let%expect_test "" =
+  infer ~env {|
+    fun[r](r: {...r}) -> choose({r with x = zero}, {{} with x = one})
+    |};
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { {  } with x = one })
+    : {  } -> { x: int; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x := zero}, {{} with x = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { {  } with x = one })
+    : { x: int; } -> { x: int; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x = zero}, {x = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { x = one })
+    : {  } -> { x: int; }
+    | |}]
+*)
+
+let%expect_test "" =
+  infer ~env
+    {|
+    fun[x, r](r: {x: x, ...r}) ->
+      choose({r with x := zero}, {x = one})
+    |};
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { x = one })
+    : { x: int; } -> { x: int; }
+    | |}]
+
+(*
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x = zero}, {r with x = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { r with x = one })
+    : a . { a } -> { x: int; a }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x := zero}, {r with x := one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { r with x := one })
+    : a . { x: int; a } -> { x: int; a }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x = zero}, {r with y = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { r with y = one })
+    ERROR: recursive row types
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x := zero}, {r with y := one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { r with y := one })
+    : a . { x: int; y: int; a } -> { x: int; y: int; a }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let f = fun x -> x.t(one) in f({t = succ})";
+  [%expect
+    {|
+    let f = fun x -> x.t(one) in f({ t = succ })
+    : int
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let f = fun x -> x.t(one) in f({t = id})";
+  [%expect {|
+    let f = fun x -> x.t(one) in f({ t = id })
+    : int
+    | |}]
+
+let%expect_test "" =
+  infer ~env "{x = one; x = true}";
+  [%expect {|
+    { x = one; x = true }
+    : { x: bool; x: int; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "let f = fun r -> let y = r.y in choose(r, {x = one; x = true}) in f";
+  [%expect
+    {|
+    let f = fun r -> let y = r.y in choose(r, { x = one; x = true }) in f
+    ERROR: unification error of
+      {  }
+    with
+      { y: _2; _6 }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x = zero}, {x = true; x = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { x = true; x = one })
+    : { x: bool; } -> { x: int; x: bool; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x := zero}, {x = true; x = one})";
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { x = true; x = one })
+    : { x: int; x: bool; } -> { x: int; x: bool; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose(r, {x = one; x = true})";
+  [%expect
+    {|
+    fun r -> choose(r, { x = one; x = true })
+    : { x: bool; x: int; } -> { x: bool; x: int; }
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x = zero}, {r with x = true})";
+  [%expect
+    {|
+    fun r -> choose({ r with x = zero }, { r with x = true })
+    ERROR: unification error of
+      bool
+    with
+      int
+    | |}]
+
+let%expect_test "" =
+  infer ~env "fun r -> choose({r with x := zero}, {r with x := true})";
+  [%expect
+    {|
+    fun r -> choose({ r with x := zero }, { r with x := true })
+    ERROR: unification error of
+      int
+    with
+      bool
+    | |}]
+    *)

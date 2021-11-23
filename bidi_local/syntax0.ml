@@ -15,7 +15,7 @@ type ty =
   | Ty_nullable of ty
   | Ty_arr of ty list * ty
   | Ty_record of ty_row
-  (* | Ty_row_empty *)
+  | Ty_row_empty
   | Ty_row_extend of (name * ty) * ty_row
   | Ty_bot
   | Ty_top

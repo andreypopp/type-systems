@@ -140,7 +140,7 @@ let rec layout_expr' expr : Layout.layout =
 and layout_ty' ty =
   let open Layout in
   let rec is_ty_row_empty = function
-    (* | Ty_row_empty -> true *)
+    | Ty_row_empty -> true
     | Ty_bot -> true
     | Ty_var var -> (
       match (Union_find.value var).ty with
@@ -191,12 +191,10 @@ and layout_ty' ty =
     | Ty_record ty_row ->
       let+ ty_row = layout_ty_row ty_row in
       braces ty_row
-    (* | Ty_row_empty -> return empty *)
-    | Ty_row_extend _ as ty -> layout_ty_row ty
+    | (Ty_row_empty | Ty_row_extend _) as ty -> layout_ty_row ty
     | Ty_bot -> return (string "⊥")
     | Ty_top -> return (string "⊤")
   and layout_ty_row = function
-    | Ty_bot -> return empty
     | Ty_row_extend ((name, ty), next) ->
       let* field =
         let+ ty = layout_ty ty in
@@ -206,6 +204,7 @@ and layout_ty' ty =
       else
         let* next = layout_ty_row next in
         return (field ^^ string ", " ^^ next)
+    | Ty_row_empty -> return empty
     | Ty_var var -> (
       match (Union_find.value var).ty with
       | None ->
@@ -213,7 +212,9 @@ and layout_ty' ty =
         string "..." ^^ var
       | Some ty -> layout_ty_row ty)
     | Ty_const name -> return (string name)
-    | _ -> assert false
+    | ty ->
+      Caml.Format.printf "%a@." Sexp.pp_hum (sexp_of_ty ty);
+      assert false
   in
   layout_ty ty
 
