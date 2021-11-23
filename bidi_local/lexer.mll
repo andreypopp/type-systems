@@ -30,6 +30,7 @@ rule token = parse
 	| "=>"    { GTE }
 	| ','     { COMMA }
 	| '.'     { DOT }
+	| '.' '.' '.' { ELLIPSIS }
 	| ';'     { SEMI }
 	| ':'     { COLON }
 	| '?'     { QUESTION }
@@ -57,7 +58,8 @@ let string_of_token = function
 	| ARROW -> "->"
 	| COMMA -> ","
 	| DOT -> "."
-	| SEMI -> "."
+	| ELLIPSIS -> "."
+	| SEMI -> ";"
 	| COLON -> ":"
 	| QUESTION -> "?"
 	| GTE -> "=>"

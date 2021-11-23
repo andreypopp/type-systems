@@ -38,7 +38,7 @@ let build_ty_sch (vs, env) ty =
 %token <string> IDENT
 %token FUN LET REC IN WITH
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
-%token ARROW EQUALS COMMA DOT SEMI COLON ASSIGN GTE QUESTION
+%token ARROW EQUALS COMMA DOT SEMI COLON ASSIGN GTE QUESTION ELLIPSIS
 %token EOF
 
 %start expr_eof
@@ -152,7 +152,7 @@ simple_ty:
 	  { Ty.nullable t }
 
 ty_row:
-    n = IDENT
+    ELLIPSIS n = IDENT
     { Ty_const n }
   | n = IDENT COLON ty = ty COMMA?
     (* { Ty_row_extend ((n, ty), Ty_row_empty) } *)

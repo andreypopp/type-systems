@@ -601,6 +601,7 @@ let%expect_test "" =
        apply_curry
        | |}]
 
+(*
 let%expect_test "" =
   infer ~env
     {|
@@ -622,7 +623,7 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env
     {|
-    let update_a[r, a](data : {a : a, r}, v : a) =
+    let update_a[r, a](data : {a : a, ...r}, v : a) =
       {data with a := v}
     in
     update_a({a = one, b = true}, null)
@@ -631,9 +632,11 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env
     {|
-    let update_a[r, a](data : {a : a, r}, v : a) =
-      {data with a := v}
+    let update_a[r, a](data : {a : a, ...r}, v : int) =
+      {data with a := plus(data.a, v)}
     in
     let data = {a = one, b = true} in
     update_a(data, null)
     |}
+
+*)
