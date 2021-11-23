@@ -492,6 +492,10 @@ and synth' ~ctx expr =
       | Ok args -> args
     in
     Constraint_set.solve constraints;
+    let expr = E_app (f, args) in
+    if Debug.log_solve then
+      Caml.Format.printf "== SOLVED %s@."
+        (Expr.show (E_ann (expr, ([], body_ty))));
     (body_ty, E_app (f, args))
   | E_record fields ->
     let row, fields =

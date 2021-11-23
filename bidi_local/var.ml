@@ -96,10 +96,15 @@ let variance v =
   | Some variance -> variance
 
 let set_variance v variance =
-  let v = Union_find.value v in
-  match v.variance with
-  | None -> v.variance <- Some variance
-  | Some variance' -> v.variance <- Some (Variance.join variance' variance)
+  let v' = Union_find.value v in
+  let new_variance =
+    match v'.variance with
+    | None -> variance
+    | Some variance' -> Variance.join variance' variance
+  in
+  v'.variance <- Some new_variance;
+  if Debug.log_solve then
+    Caml.Format.printf "VARIANCE %s %s@." (show v) (Variance.show variance)
 
 (** [occurs_check_adjust_lvl v ty] checks that variable [v] is not
     contained within type [ty] and adjust levels of all unbound vars within
@@ -147,14 +152,15 @@ let set_ty v ty =
   | Some _, _ -> failwith "ty is already assigned"
   | None, Ty_var _ -> failwith "unable to set ty to another var"
   | None, ty ->
-    (* Caml.Format.printf "SET %s %s@." (show v) (Ty.show ty); *)
+    if Debug.log_solve then
+      Caml.Format.printf "SET %s %s@." (show v) (Ty.show ty);
     occurs_check_adjust_lvl v ty;
     v'.ty <- Some ty
 
 let is_empty v = Option.is_none (ty v)
 
 let union ~merge_lower ~merge_upper v1 v2 =
-  (* Caml.Format.printf "MERGE %s %s@." (show v1) (show v2); *)
+  if Debug.log_solve then Caml.Format.printf "MERGE %s %s@." (show v1) (show v2);
   if equal v1 v2 then ()
   else
     match (ty v1, ty v2) with
