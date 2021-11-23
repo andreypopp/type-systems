@@ -7,6 +7,7 @@ let () =
     |> Env.assume_val "id" "a . a -> a"
     |> Env.assume_val "null" "a . a?"
     |> Env.assume_val "one" "int"
+    |> Env.assume_val "succ" "int -> int"
     |> Env.assume_val "nil" "a . list[a]"
     |> Env.assume_val "cons" "a . (a, list[a]) -> list[a]"
     |> Env.assume_val "map" "a, b . (a -> b, list[a]) -> list[b]"

@@ -115,7 +115,7 @@ end = struct
     let exception Row_rewrite_error in
     let rec aux a b =
       if Debug.log_solve then
-        Caml.Format.printf "LUB %s %s@." (Ty.show a) (Ty.show b);
+        Caml.Format.printf "LUB %s & %s@." (Ty.show a) (Ty.show b);
       if phys_equal a b then a
       else
         match (a, b) with
@@ -207,9 +207,8 @@ end = struct
       | ty, Ty_var v -> (
         match Var.ty v with
         | None ->
-          raise Row_rewrite_error
-          (* add cs v (ty, Ty_top); *)
-          (* ty *)
+          add cs v (ty, Ty_top);
+          ty
         | Some ty' -> aux_row ty ty')
       | _, _ -> raise Row_rewrite_error
     in
@@ -341,8 +340,13 @@ end = struct
       | (None | Some Covariant), lower, None, upper ->
         ensure_is_subtype ~sub_ty:lower ~super_ty:upper;
         Var.set_ty v lower
+      | Some Contravariant, lower, None, Ty_top -> Var.set_ty v lower
       | Some Contravariant, lower, None, upper ->
         ensure_is_subtype ~sub_ty:lower ~super_ty:upper;
+        Var.set_ty v upper
+      | Some Invariant, Ty_bot, None, Ty_top -> assert false
+      | Some Invariant, Ty_bot, None, upper ->
+        (* TODO: not sure this case is ok *)
         Var.set_ty v upper
       | Some Invariant, lower, None, Ty_top ->
         (* TODO: not sure this case is ok *)
@@ -509,6 +513,22 @@ let subsumes constraints =
           Type_error.raise Error_recursive_record_type
       | _ -> ());
       aux_row ~sub_row ~super_row
+    | Ty_var sub_v, Ty_row_extend ((name, super_ty), super_row) -> (
+      match Var.ty sub_v with
+      | Some sub_ty -> aux ~super_ty ~sub_ty
+      | None ->
+        let sub_row = Ty.var @@ Var.fresh ~lvl:(Var.lvl sub_v) () in
+        let sub_ty = Ty_row_extend ((name, super_ty), sub_row) in
+        Var.set_ty sub_v sub_ty;
+        aux_row ~sub_row ~super_row)
+    | Ty_row_extend ((name, sub_ty), sub_row), Ty_var super_v -> (
+      match Var.ty super_v with
+      | Some super_ty -> aux ~super_ty ~sub_ty
+      | None ->
+        let super_row = Ty.var @@ Var.fresh ~lvl:(Var.lvl super_v) () in
+        let super_ty = Ty_row_extend ((name, sub_ty), sub_row) in
+        Var.set_ty super_v super_ty;
+        aux_row ~sub_row ~super_row)
     | sub_row, super_row -> aux ~sub_ty:sub_row ~super_ty:super_row
   in
 
