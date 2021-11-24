@@ -36,9 +36,9 @@ let build_ty_sch (vs, env) ty =
 %}
 
 %token <string> IDENT
-%token FUN LET REC IN WITH
+%token FUN LET IN WITH
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
-%token ARROW EQUALS COMMA DOT SEMI COLON ASSIGN GTE QUESTION ELLIPSIS
+%token ARROW EQUALS COMMA DOT COLON ASSIGN QUESTION ELLIPSIS
 %token EOF
 
 %start expr_eof
@@ -51,16 +51,16 @@ let build_ty_sch (vs, env) ty =
 %%
 
 expr_eof:
-	  e = expr EOF        { e }
+	  e = expr EOF { e }
 
 ty_sch_eof:
-	  t = ty_sch EOF   { t }
+	  t = ty_sch EOF { t }
 
 ty_eof:
-	  t = ty EOF   { t }
+	  t = ty EOF { t }
 
 expr:
-	  e = simple_expr     { e }
+	  e = simple_expr { e }
 
 	| LPAREN e = expr t = expr_annot RPAREN { E_ann (e, t) }
 
@@ -92,7 +92,7 @@ ty_args:
     (* empty *) { [] }
   | LBRACKET vs = nonempty_flex_list(COMMA, ty_arg) RBRACKET { vs }
 
-ty_arg:
+ty_arg: 
     n = IDENT { Var.fresh ~name:n () }
 
 arg_annot:

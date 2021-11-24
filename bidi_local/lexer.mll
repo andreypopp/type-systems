@@ -14,7 +14,6 @@ rule token = parse
 	| [' ' '\t' '\r' '\n']  { token lexbuf }
 	| "fun"                 { FUN }
 	| "let"                 { LET }
-	| "rec"                 { REC }
 	| "in"                  { IN }
 	| "with"                { WITH }
 	| ident                 { IDENT (Lexing.lexeme lexbuf) }
@@ -27,11 +26,9 @@ rule token = parse
 	| '='     { EQUALS }
 	| ':' '=' { ASSIGN }
 	| "->"    { ARROW }
-	| "=>"    { GTE }
 	| ','     { COMMA }
 	| '.'     { DOT }
 	| '.' '.' '.' { ELLIPSIS }
-	| ';'     { SEMI }
 	| ':'     { COLON }
 	| '?'     { QUESTION }
 	| eof     { EOF }
@@ -43,7 +40,6 @@ rule token = parse
 let string_of_token = function
 	| FUN -> "fun"
 	| LET -> "let"
-	| REC -> "rec"
 	| IN -> "in"
 	| WITH -> "forall"
 	| IDENT ident -> ident
@@ -59,10 +55,8 @@ let string_of_token = function
 	| COMMA -> ","
 	| DOT -> "."
 	| ELLIPSIS -> "."
-	| SEMI -> ";"
 	| COLON -> ":"
 	| QUESTION -> "?"
-	| GTE -> "=>"
 	| EOF -> "<eof>"
 
 }
