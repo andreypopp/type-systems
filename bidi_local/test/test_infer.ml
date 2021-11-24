@@ -776,9 +776,7 @@ let%expect_test "" =
   infer ~env "let r = {a = id, b = succ} in choose(r.a, r.b)";
   [%expect
     {|
-    (let r : b . {a: b -> b, b: int -> int} =
-       {a = id, b = succ}
-     in
+    (let r : b . {a: b -> b, b: int -> int} = {a = id, b = succ} in
      choose(r.a, r.b)
      : int -> int)
     | |}]
@@ -787,9 +785,10 @@ let%expect_test "" =
   infer ~env "let r = {a = id, b = fun[a](x: a) -> x} in choose(r.a, r.b)";
   [%expect
     {|
-    (let r : a/1, b/2 . {a: b/2 -> b/2, b: a/1 -> a/1} =
-       {a = id, b = fun[a/1] (x: a/1) -> x}
-     in
+    (let r : a/1, b/2 . {a: b/2 -> b/2, b: a/1 -> a/1} = {
+       a = id,
+       b = fun[a/1] (x: a/1) -> x
+     } in
      choose(r.a, r.b)
      : a . a -> a)
     | |}]

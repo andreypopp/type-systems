@@ -64,4 +64,6 @@ end
 
 let infer = Infer.infer
 
+let enable_colors = Layout.enable_colors
+
 let () = Expr.pp_exceptions ()

@@ -1,4 +1,4 @@
 (executable
  (public_name bidi_local)
  (name main)
- (libraries bidi_local base stdio))
+ (libraries bidi_local base stdio unix))

@@ -2,6 +2,7 @@ open Base
 open Bidi_local
 
 let () =
+  let () = if Unix.isatty Unix.stdout then enable_colors true in
   let env =
     Env.empty
     |> Env.assume_val "id" "a . a -> a"

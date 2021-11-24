@@ -1,6 +1,16 @@
 open! Import
 include Syntax0
 
+let kw = Layout.bold
+
+let punct = Layout.fg White
+
+let record_braces doc = Layout.(punct (string "{") ^^ doc ^^ punct (string "}"))
+
+let ty_brackets doc = Layout.(punct (string "[") ^^ doc ^^ punct (string "]"))
+
+let f_parens doc = Layout.(punct (string "(") ^^ doc ^^ punct (string ")"))
+
 let rec layout_expr' expr : Layout.layout =
   let open Layout in
   let is_simple_expr = function
@@ -14,16 +24,18 @@ let rec layout_expr' expr : Layout.layout =
   | E_ann (expr, ty_sch) ->
     let* ty_sch = layout_ty_sch' ty_sch in
     let* expr = layout_expr' expr in
-    return (group (parens (align (expr ^^ break 1 ^^ string ": " ^^ ty_sch))))
+    return
+      (group
+         (f_parens (align (expr ^^ break 1 ^^ punct (string ": ") ^^ ty_sch))))
   | E_var name -> return (string name)
   | E_abs (vs, args, body) ->
-    let sep = comma ^^ blank 1 in
+    let sep = punct comma ^^ blank 1 in
     let* vs =
       match vs with
       | [] -> return empty
       | vs ->
         let+ items = list_map vs ~f:layout_poly_var' in
-        brackets (separate sep items)
+        ty_brackets (separate sep items)
     in
     let newline =
       (* Always break on let inside the body. *)
@@ -39,21 +51,27 @@ let rec layout_expr' expr : Layout.layout =
           | name, None -> return (string name)
           | name, Some ty ->
             let* ty = layout_ty' ty in
-            return (string name ^^ string ": " ^^ ty)
+            return (string name ^^ punct (string ": ") ^^ ty)
         in
         let+ items = list_map args ~f:layout_arg in
-        parens (separate sep items)
+        f_parens (separate sep items)
     in
     let* body = layout_expr' body in
     return
       (group
-         (group (string "fun" ^^ vs ^^ string " " ^^ args ^^ string " ->")
+         (group
+            (kw (string "fun")
+            ^^ vs
+            ^^ string " "
+            ^^ args
+            ^^ punct (string " ->"))
          ^^ nest 2 (group (newline ^^ group body))))
   | E_app (f, args) ->
-    let sep = comma ^^ break 1 in
+    let sep = punct comma ^^ break 1 in
     let* f = layout_expr' f in
     let* args = list_map args ~f:layout_expr' in
-    return (group (f ^^ parens (nest 2 (group (break 0 ^^ separate sep args)))))
+    return
+      (group (f ^^ f_parens (nest 2 (group (break 0 ^^ separate sep args)))))
   | E_let _ as e ->
     let es =
       (* We do not want to print multiple nested let-expression with indents and
@@ -80,23 +98,33 @@ let rec layout_expr' expr : Layout.layout =
             match ty with
             | None -> return empty
             | Some ty ->
+              let ty_break, ty_nest =
+                match ty with
+                | [], Ty_record _ -> (space, 0)
+                | _ -> (break 1, 4)
+              in
               let+ ty = layout_ty_sch' ty in
-              string " :" ^^ nest 4 (break 1 ^^ ty)
+              punct (string " :") ^^ nest ty_nest (ty_break ^^ ty)
           in
-          let expr_newline =
+          let expr_newline, expr_nest =
             (* If there's [let x = let y = ... in ... in ...] then we want to
                force break. *)
             match expr with
-            | E_let _ -> hardline
-            | _ -> break 1
+            | E_let _ -> (hardline, 2)
+            | E_record _ -> (space, 0)
+            | _ -> (break 1, 2)
           in
           let* expr = layout_expr' expr in
           return
             (group
-               (group (string "let " ^^ string name ^^ ascription ^^ string " =")
-               ^^ nest 2 (expr_newline ^^ expr)
+               (group
+                  (kw (string "let ")
+                  ^^ string name
+                  ^^ ascription
+                  ^^ punct (string " ="))
+               ^^ nest expr_nest (expr_newline ^^ expr)
                ^^ expr_newline
-               ^^ string "in")
+               ^^ kw (string "in"))
             ^^ newline)
         | e -> layout_expr' e)
     in
@@ -104,36 +132,36 @@ let rec layout_expr' expr : Layout.layout =
   | E_record fields ->
     let layout_field (name, expr) =
       let+ expr = layout_expr' expr in
-      string name ^^ string " = " ^^ expr
+      string name ^^ punct (string " = ") ^^ expr
     in
     let+ fields = Layout.list_map fields ~f:layout_field in
-    let sep = comma ^^ break 1 in
-    group (braces (separate sep fields))
+    let sep = punct comma ^^ break 1 in
+    group (record_braces (nest 2 (break 0 ^^ separate sep fields) ^^ break 0))
   | E_record_project (expr, name) ->
     if is_simple_expr expr then
       let+ expr = layout_expr' expr in
       expr ^^ dot ^^ string name
     else
       let+ expr = layout_expr' expr in
-      parens expr ^^ dot ^^ string name
+      f_parens expr ^^ dot ^^ string name
   | E_record_extend (expr, fields) ->
     let layout_field (name, expr) =
       let+ expr = layout_expr' expr in
-      string name ^^ string " = " ^^ expr
+      string name ^^ punct (string " = ") ^^ expr
     in
     let* expr = layout_expr' expr in
     let* fields = Layout.list_map fields ~f:layout_field in
-    let sep = comma ^^ break 1 in
-    return (braces (expr ^^ string " with " ^^ separate sep fields))
+    let sep = punct comma ^^ break 1 in
+    return (record_braces (expr ^^ kw (string " with ") ^^ separate sep fields))
   | E_record_update (expr, fields) ->
     let layout_field (name, expr) =
       let+ expr = layout_expr' expr in
-      string name ^^ string " := " ^^ expr
+      string name ^^ punct (string " := ") ^^ expr
     in
     let* expr = layout_expr' expr in
     let* fields = Layout.list_map fields ~f:layout_field in
-    let sep = comma ^^ break 1 in
-    return (braces (expr ^^ string " with " ^^ separate sep fields))
+    let sep = punct comma ^^ break 1 in
+    return (record_braces (expr ^^ kw (string " with ") ^^ separate sep fields))
   | E_lit (Lit_string v) -> return (dquotes (string v))
   | E_lit (Lit_int v) -> return (dquotes (string (Int.to_string v)))
 
@@ -167,20 +195,20 @@ and layout_ty' ty =
       return
         ((if is_ty_arr_to_the_left then
           (* If the single arg is the Ty_arr we need to wrap it in parens. *)
-          parens aty
+          f_parens aty
          else aty)
-        ^^ string " -> "
+        ^^ punct (string " -> ")
         ^^ rty)
     | Ty_arr (atys, rty) ->
-      let sep = comma ^^ blank 1 in
+      let sep = punct comma ^^ blank 1 in
       let* atys = list_map atys ~f:layout_ty in
       let* rty = layout_ty rty in
-      return (parens (separate sep atys) ^^ string " -> " ^^ rty)
+      return (f_parens (separate sep atys) ^^ punct (string " -> ") ^^ rty)
     | Ty_app (fty, atys) ->
-      let sep = comma ^^ blank 1 in
+      let sep = punct comma ^^ blank 1 in
       let* fty = layout_ty fty in
       let* atys = list_map atys ~f:layout_ty in
-      return (fty ^^ brackets (separate sep atys))
+      return (fty ^^ ty_brackets (separate sep atys))
     | Ty_nullable ty ->
       let* ty = layout_ty ty in
       return (ty ^^ string "?")
@@ -190,7 +218,7 @@ and layout_ty' ty =
       | Some ty -> layout_ty ty)
     | Ty_record ty_row ->
       let+ ty_row = layout_ty_row ty_row in
-      braces ty_row
+      group (record_braces (nest 2 (break 0 ^^ ty_row) ^^ break 0))
     | (Ty_row_empty | Ty_row_extend _) as ty -> layout_ty_row ty
     | Ty_bot -> return (string "⊥")
     | Ty_top -> return (string "⊤")
@@ -198,18 +226,19 @@ and layout_ty' ty =
     | Ty_row_extend ((name, ty), next) ->
       let* field =
         let+ ty = layout_ty ty in
-        string name ^^ string ": " ^^ ty
+        string name ^^ punct (string ": ") ^^ ty
       in
       if is_ty_row_empty next then return field
       else
         let* next = layout_ty_row next in
-        return (field ^^ string ", " ^^ next)
+        let sep = punct comma ^^ break 1 in
+        return (field ^^ sep ^^ next)
     | Ty_row_empty -> return empty
     | Ty_var var -> (
       match (Union_find.value var).ty with
       | None ->
         let+ var = layout_var' var in
-        string "..." ^^ var
+        punct (string "...") ^^ var
       | Some ty -> layout_ty_row ty)
     | Ty_const name -> return (string name)
     | ty ->
@@ -252,9 +281,9 @@ and layout_ty_sch' (ty_sch : ty_sch) =
 
 and layout_var_prenex' vs =
   let open Layout in
-  let sep = comma ^^ blank 1 in
+  let sep = punct comma ^^ blank 1 in
   let* vs = list_map vs ~f:layout_poly_var' in
-  return (separate sep vs ^^ string " . ")
+  return (separate sep vs ^^ punct (string " . "))
 
 and layout_poly_var' v : Layout.layout =
   let open Layout in

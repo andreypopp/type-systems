@@ -126,6 +126,33 @@ let closed ?names v cnames =
   let _names, v = v names in
   (names, v)
 
+type color = Black | Red | Green | Yellow | Blue | Magenta | Cyan | White
+
+let int_of_color col =
+  match col with
+  | Black -> 0
+  | Red -> 1
+  | Green -> 2
+  | Yellow -> 3
+  | Blue -> 4
+  | Magenta -> 5
+  | Cyan -> 6
+  | White -> 7
+
+let enable_colors_flag = ref false
+
+let enable_colors enable = enable_colors_flag := enable
+
+let bold doc =
+  if not !enable_colors_flag then doc
+  else fancystring "\x1B[1m" 0 ^^ doc ^^ fancystring "\x1B[0m" 0
+
+let fg color doc =
+  if not !enable_colors_flag then doc
+  else
+    let opening = Printf.sprintf "\x1B[3%dm" (int_of_color color) in
+    fancystring opening 0 ^^ doc ^^ fancystring "\x1B[0m" 0
+
 include Monad.Make (struct
   type nonrec 'a t = 'a t
 

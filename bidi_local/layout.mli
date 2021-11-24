@@ -39,3 +39,13 @@ type layout = document t
 
 val render : layout -> document
 (** Render layout into a document. *)
+
+(** Colors *)
+
+type color = Black | Red | Green | Yellow | Blue | Magenta | Cyan | White
+
+val bold : document -> document
+
+val fg : color -> document -> document
+
+val enable_colors : bool -> unit
