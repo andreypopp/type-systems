@@ -160,7 +160,7 @@ let set_ty v ty =
 let is_empty v = Option.is_none (ty v)
 
 let union ~merge_lower ~merge_upper v1 v2 =
-  if Debug.log_solve then Caml.Format.printf "MERGE %s %s@." (show v1) (show v2);
+  if Debug.log_solve then Caml.Format.printf "UNION %s %s@." (show v1) (show v2);
   if equal v1 v2 then ()
   else
     match (ty v1, ty v2) with
