@@ -221,7 +221,8 @@ and union_vars a b =
   Var.union ~merge_lower:least_upper_bound ~merge_upper:greatest_lower_bound a b
 
 let is_subtype ~sub_ty ~super_ty =
-  Ty.equal (least_upper_bound sub_ty super_ty) super_ty
+  let lub = least_upper_bound sub_ty super_ty in
+  Ty.equal lub super_ty
 
 module Constraint_set : sig
   type t

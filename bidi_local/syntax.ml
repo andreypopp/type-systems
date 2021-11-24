@@ -343,6 +343,10 @@ module Ty = struct
       match List.for_all2 args brgs ~f:equal with
       | Unequal_lengths -> false
       | Ok v -> v)
+    | Ty_record row1, Ty_record row2 -> equal row1 row2
+    | Ty_row_empty, Ty_row_empty -> true
+    | Ty_row_extend ((name1, ty1), row1), Ty_row_extend ((name2, ty2), row2) ->
+      String.equal name1 name2 && equal ty1 ty2 && equal row1 row2
     | Ty_bot, Ty_bot -> true
     | Ty_top, Ty_top -> true
     | _, _ -> false
