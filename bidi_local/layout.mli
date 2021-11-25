@@ -40,6 +40,8 @@ type layout = document t
 val render : layout -> document
 (** Render layout into a document. *)
 
+val to_string : layout -> string
+
 (** Colors *)
 
 type color = Black | Red | Green | Yellow | Blue | Magenta | Cyan | White

@@ -2,6 +2,9 @@
 
 open Syntax
 
+let makeloc s e =
+  {Location.loc_start=s; loc_end=e; loc_ghost=false}
+
 let makeenv vars =
   let open Base in
   Var.reset ();
@@ -62,22 +65,32 @@ ty_eof:
 expr:
 	  e = simple_expr { e }
 
-	| LPAREN e = expr t = expr_annot RPAREN { E_ann (e, t) }
+	| LPAREN e = expr t = expr_annot RPAREN
+	  { makeloc $startpos $endpos, E_ann (e, t) }
 
 	(* let-bindings *)
 	| LET n = IDENT t = option(expr_annot) EQUALS e = expr IN b = expr
-	  { E_let ((n, e, t), b) }
+	  { makeloc $startpos $endpos, E_let ((n, e, t), b) }
 
 	(* functions *)
-  | FUN ty_args = ty_args arg = IDENT ARROW body = expr
-    { E_abs (ty_args, [arg, None], body) }
+  | FUN ty_args = ty_args arg = ident ARROW body = expr
+    { makeloc $startpos $endpos, E_abs (ty_args, [arg, None], body) }
   | FUN ty_args = ty_args args = args ARROW body = expr
-    { E_abs (ty_args, args, body) }
+    { makeloc $startpos $endpos, E_abs (ty_args, args, body) }
 
-	| LET n = IDENT ty_args = ty_args arg = IDENT EQUALS e = expr IN b = expr
-    { E_let ((n, E_abs (ty_args, [arg, None], e), None), b) }
+	| LET n = IDENT ty_args = ty_args arg = ident EQUALS e = expr IN b = expr
+    {
+      let e = makeloc $startpos $endpos, E_abs (ty_args, [arg, None], e) in
+      makeloc $startpos $endpos, E_let ((n, e, None), b)
+    }
 	| LET n = IDENT ty_args = ty_args args = args EQUALS e = expr IN b = expr
-    { E_let ((n, E_abs (ty_args, args, e), None), b) }
+    {
+      let e = makeloc $startpos $endpos, E_abs (ty_args, args, e) in
+      makeloc $startpos $endpos, E_let ((n, e, None), b)
+    }
+
+ident:
+  n = IDENT { makeloc $startpos $endpos, n }
 
 %inline expr_annot:
     COLON t = ty_sch { t }
@@ -86,7 +99,7 @@ args:
     LPAREN args = flex_list(COMMA, arg) RPAREN { args }
 
 arg:
-    n = IDENT t = option(arg_annot) { n, t }
+    n = ident t = option(arg_annot) { n, t }
 
 ty_args:
     (* empty *) { [] }
@@ -99,18 +112,19 @@ arg_annot:
     COLON t = ty { t }
 
 simple_expr:
-	  n = IDENT              { E_var n }
+    n = IDENT
+    { makeloc $startpos $endpos, E_var n }
 	| LPAREN e = expr RPAREN { e }
 	| f = simple_expr LPAREN args = flex_list(COMMA, expr) RPAREN
-	  { E_app (f, args) }
+	  { makeloc $startpos $endpos, E_app (f, args) }
 	| LBRACE fs = flex_list(COMMA, record_field) RBRACE
-	  { E_record fs }
+	  { makeloc $startpos $endpos, E_record fs }
 	| LBRACE e = expr WITH fs = nonempty_flex_list(COMMA, record_field) RBRACE
-	  { E_record_extend (e, fs) }
+	  { makeloc $startpos $endpos, E_record_extend (e, fs) }
 	| LBRACE e = expr WITH fs = nonempty_flex_list(COMMA, record_field_update) RBRACE
-	  { E_record_update (e, fs) }
+	  { makeloc $startpos $endpos, E_record_update (e, fs) }
 	| e = simple_expr DOT n = IDENT
-	  { E_record_project (e, n) }
+    { makeloc $startpos $endpos, E_record_project (e, n) }
 
 record_field:
     n = IDENT EQUALS e = expr

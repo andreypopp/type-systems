@@ -290,7 +290,7 @@ end = struct
 
   let ensure_is_subtype ~sub_ty ~super_ty =
     if not (is_subtype ~sub_ty ~super_ty) then
-      Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+      Type_error.raise_not_a_subtype ~sub_ty ~super_ty ()
 
   let solve set =
     set := List.dedup_and_sort ~compare:Var.compare !set;

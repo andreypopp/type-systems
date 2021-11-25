@@ -20,10 +20,13 @@ let env =
 
 let infer ~env code =
   Var.reset ();
+  let code = String.strip code in
   let prog = Expr.parse_string code in
   match infer ~env prog with
   | Ok e -> Caml.Format.printf "%s@.|" (Expr.show e)
-  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Type_error.show err)
+  | Error err ->
+    let report = Type_error.to_report err in
+    Caml.Format.printf "%a@.|" Location.print_report report
 
 let%expect_test "" =
   infer ~env "choose(one, one)";
@@ -211,13 +214,21 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "x";
   [%expect {|
-       ERROR: unknown name: x
+       Line 1, characters 0-1:
+       1 | x
+           ^
+       Error: 'x' is not defined
+
        | |}]
 
 let%expect_test "" =
   infer ~env "let x = x in x";
   [%expect {|
-       ERROR: unknown name: x
+       Line 1, characters 8-9:
+       1 | let x = x in x
+                   ^
+       Error: 'x' is not defined
+
        | |}]
 
 let%expect_test "" =
@@ -307,7 +318,12 @@ let%expect_test "" =
     choose_curry(f)(id)
     |};
   [%expect {|
-       ERROR: type int is not a subtype of bool
+       Line 1, characters 100-102:
+       -1 | ....................................
+        0 | ..........................................
+        1 | ....................id.
+       Error: type bool -> bool is not a subtype of int -> int
+
        | |}]
 
 let%expect_test "" =
@@ -435,13 +451,21 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "plus(one, true)";
   [%expect {|
-       ERROR: type bool is not a subtype of int
+       Line 1, characters 10-14:
+       1 | plus(one, true)
+                     ^^^^
+       Error: type bool is not a subtype of int
+
        | |}]
 
 let%expect_test "" =
   infer ~env "plus(one)";
   [%expect {|
-       ERROR: arity mismatch
+       Line 1, characters 0-9:
+       1 | plus(one)
+           ^^^^^^^^^
+       Error: arity mismatch
+
        | |}]
 
 let%expect_test "" =
@@ -536,7 +560,11 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "one(id)";
   [%expect {|
-       ERROR: expected a function but got: int
+       Line 1, characters 0-3:
+       1 | one(id)
+           ^^^
+       Error: expected a function
+
        | |}]
 
 let%expect_test "" =
@@ -723,7 +751,11 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "({}).x";
   [%expect {|
-    ERROR: type {} is not a subtype of {x: _2, ..._1}
+    Line 1, characters 1-3:
+    1 | ({}).x
+         ^^
+    Error: type {} is not a subtype of {x: _2, ..._1}
+
     | |}]
 
 let%expect_test "" =
@@ -760,10 +792,14 @@ let%expect_test "" =
   infer ~env "({a = one, b = true}).c";
   [%expect
     {|
-    ERROR: type
+    Line 1, characters 1-20:
+    1 | ({a = one, b = true}).c
+         ^^^^^^^^^^^^^^^^^^^
+    Error: type
       {a: int, b: bool}
     is not a subtype of
       {c: _2, a: int, b: bool, ..._4}
+
     | |}]
 
 let%expect_test "" =
@@ -826,13 +862,21 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "{ {x = one } with x := true }";
   [%expect {|
-    ERROR: type bool is not a subtype of int
+    Line 1, characters 0-29:
+    1 | { {x = one } with x := true }
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Error: type {x: bool, ..._1} is not a subtype of {x: int}
+
     | |}]
 
 let%expect_test "" =
   infer ~env "let a = {} in {a with b := one}";
   [%expect {|
-    ERROR: type b: int, ..._1 is not a subtype of
+    Line 1, characters 14-31:
+    1 | let a = {} in {a with b := one}
+                      ^^^^^^^^^^^^^^^^^
+    Error: type {b: int, ..._1} is not a subtype of {}
+
     | |}]
 
 let%expect_test "" =
@@ -847,14 +891,22 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env "let a = {x = one} in ({a with x := true}).x";
   [%expect {|
-    ERROR: type bool is not a subtype of int
+    Line 1, characters 22-40:
+    1 | let a = {x = one} in ({a with x := true}).x
+                              ^^^^^^^^^^^^^^^^^^
+    Error: type {x: bool, ..._3} is not a subtype of {x: int}
+
     | |}]
 
 let%expect_test "" =
   infer ~env "let a = {x = one} in a.y";
   [%expect
     {|
-    ERROR: type {x: int} is not a subtype of {y: _2, x: int, ..._3}
+    Line 1, characters 21-22:
+    1 | let a = {x = one} in a.y
+                             ^
+    Error: type {x: int} is not a subtype of {y: _2, x: int, ..._3}
+
     | |}]
 
 let%expect_test "" =
@@ -888,7 +940,11 @@ let%expect_test "" =
   infer ~env
     "let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in addx({})";
   [%expect {|
-    ERROR: type {} is not a subtype of {x: int, ...=_6}
+    Line 1, characters 67-69:
+    1 | let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in addx({})
+                                                                           ^^
+    Error: type {} is not a subtype of {x: int, ...=_6}
+
     | |}]
 
 let%expect_test "" =
@@ -949,10 +1005,14 @@ let%expect_test "" =
     |};
   [%expect
     {|
-    ERROR: type
+    Line 1, characters 59-78:
+    0 | ................................................
+    1 | ..........{y = one, z = true}.
+    Error: type
       {y: int, z: bool}
     is not a subtype of
       {x: =_7, y: int, z: bool, ..._10}
+
     | |}]
 
 let%expect_test "" =
@@ -1142,5 +1202,9 @@ let%expect_test "" =
   infer ~env
     "fun[r](r: {...r}) -> choose({r with x := zero}, {r with x := true})";
   [%expect {|
-    ERROR: type bool is not a subtype of int
+    Line 1, characters 48-66:
+    1 | fun[r](r: {...r}) -> choose({r with x := zero}, {r with x := true})
+                                                        ^^^^^^^^^^^^^^^^^^
+    Error: type {x: bool, ..._6} is not a subtype of {x: int, ..._4}
+
     | |}]

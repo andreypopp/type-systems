@@ -35,9 +35,17 @@ and var' = {
 }
 [@@deriving sexp_of]
 
-type expr =
+module Location = struct
+  include Location
+
+  let sexp_of_t _loc = Sexp.Atom "LOC"
+end
+
+type expr = Location.t * exprsyn
+
+and exprsyn =
   | E_var of name
-  | E_abs of var list * (name * ty option) list * expr
+  | E_abs of var list * ((Location.t * name) * ty option) list * expr
   | E_app of expr * expr list
   | E_let of (name * expr * ty_sch option) * expr
   | E_lit of lit

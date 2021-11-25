@@ -106,6 +106,13 @@ let render layout =
   let _, v = layout Names.empty in
   v
 
+let to_string layout =
+  let doc = render layout in
+  let width = 60 in
+  let buf = Buffer.create 100 in
+  PPrint.ToBuffer.pretty 1. width buf doc;
+  Buffer.contents buf
+
 type layout = document t
 
 let alloc_var = Names.alloc_var

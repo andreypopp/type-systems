@@ -22,7 +22,10 @@ let () =
     |> Env.assume_val "ifnull" "a . (a?, a) -> a"
     |> Env.assume_val "eq" "a . (a, a) -> bool"
   in
-  let e = Expr.parse_chan Stdio.stdin in
+  let s = Stdio.In_channel.input_all Stdio.stdin in
+  let e = Expr.parse_string (String.strip s) in
   match infer ~env e with
   | Ok e -> Caml.Format.printf "%s@." (Expr.show e)
-  | Error err -> Caml.Format.printf "ERROR: %s@." (Type_error.show err)
+  | Error err ->
+    let report = Type_error.to_report err in
+    Caml.Format.printf "%a@." Location.print_report report

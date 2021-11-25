@@ -140,9 +140,11 @@ and demote ~lvl (ty : ty) =
   | Ty_bot -> ty
   | Ty_top -> ty
 
-let subsumes ~lvl constraints =
+let subsumes ~lvl constraints ~sub:(sub_loc, sub_ty) ~super:(super_loc, super_ty)
+    =
+  let exception Subsumption_failed of { sub_ty : ty; super_ty : ty } in
   let exception Row_rewrite_error in
-  let rec aux ~super_ty ~sub_ty =
+  let rec aux ~sub_ty ~super_ty =
     if Debug.log_solve then
       Caml.Format.printf "??? %s <: %s@." (Ty.show sub_ty) (Ty.show super_ty);
     if phys_equal super_ty sub_ty || Ty.equal super_ty sub_ty then ()
@@ -150,7 +152,7 @@ let subsumes ~lvl constraints =
       match (sub_ty, super_ty) with
       | Ty_const name, Ty_const name' ->
         if not (String.equal name name') then
-          Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+          raise (Subsumption_failed { sub_ty; super_ty })
       | Ty_nullable sub_ty', Ty_nullable super_ty' ->
         aux ~super_ty:super_ty' ~sub_ty:sub_ty'
       | sub_ty', Ty_nullable super_ty' ->
@@ -161,19 +163,19 @@ let subsumes ~lvl constraints =
           List.iter2 super_args sub_args ~f:(fun super_ty' sub_ty' ->
               aux ~super_ty:super_ty' ~sub_ty:sub_ty')
         with
-        | Unequal_lengths -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+        | Unequal_lengths -> raise (Subsumption_failed { sub_ty; super_ty })
         | Ok () -> ())
       | Ty_arr (sub_args, sub_ty'), Ty_arr (super_args, super_ty') ->
         (match
            List.iter2 super_args sub_args ~f:(fun super_ty' sub_ty' ->
                aux ~sub_ty:super_ty' ~super_ty:sub_ty')
          with
-        | Unequal_lengths -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+        | Unequal_lengths -> raise (Subsumption_failed { sub_ty; super_ty })
         | Ok () -> ());
         aux ~sub_ty:sub_ty' ~super_ty:super_ty'
       | Ty_record sub_row, Ty_record super_row -> (
         try aux_row ~sub_row ~super_row with
-        | Row_rewrite_error -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty)
+        | Row_rewrite_error -> raise (Subsumption_failed { sub_ty; super_ty }))
       | Ty_var sub_v, Ty_var super_v -> (
         match (Var.ty sub_v, Var.ty super_v) with
         | None, None -> Subtyping.union_vars sub_v super_v
@@ -198,7 +200,7 @@ let subsumes ~lvl constraints =
             (promote ~lvl sub_ty, Ty_top))
       | _, Ty_top -> ()
       | Ty_bot, _ -> ()
-      | _ -> Type_error.raise_not_a_subtype ~sub_ty ~super_ty
+      | _ -> raise (Subsumption_failed { sub_ty; super_ty })
   and aux_row ~sub_row ~super_row =
     match (sub_row, super_row) with
     | Ty_row_empty, Ty_row_extend _ -> raise Row_rewrite_error
@@ -249,7 +251,9 @@ let subsumes ~lvl constraints =
         aux_row ~sub_row ~super_row)
     | sub_row, super_row -> aux ~sub_ty:sub_row ~super_ty:super_row
   in
-  aux
+  try aux ~sub_ty ~super_ty with
+  | Subsumption_failed _ ->
+    Type_error.raise_not_a_subtype ~sub_loc ~sub_ty ~super_loc ~super_ty ()
 
 let fresh_fun_ty ~arity v =
   let lvl = Var.lvl v in
@@ -280,21 +284,21 @@ and synth' ~ctx expr =
       (Variance.show ctx.variance)
       (Expr.show expr);
   match expr with
-  | E_var name ->
+  | loc, E_var name ->
     let ty =
       match Env.find_val ctx.env name with
-      | None -> Type_error.raise (Error_unknown_name name)
+      | None -> Type_error.raise (Error_unknown_name { name = (loc, name) })
       | Some (val_kind, ty_sch) ->
         instantiate ~val_kind ~lvl:ctx.lvl ~variance:ctx.variance ty_sch
     in
     (ty, expr)
-  | E_ann (expr, ty_sch) ->
+  | _, E_ann (expr, ty_sch) ->
     let ty =
       instantiate ~env:ctx.env ~lvl:ctx.lvl ~variance:ctx.variance ty_sch
     in
     (* TODO: here we drop E_ann, is this ok? *)
     (ty, check ~ctx expr ty)
-  | E_abs (vs, args, body) ->
+  | loc, E_abs (vs, args, body) ->
     let env, vs =
       List.fold vs ~init:(ctx.env, []) ~f:(fun (env, vs) v ->
           let v = Var.refresh ~lvl:ctx.lvl v in
@@ -302,10 +306,11 @@ and synth' ~ctx expr =
     in
     let env, args, args_ty =
       List.fold args ~init:(env, [], [])
-        ~f:(fun (env, args, args_ty) (name, ty) ->
+        ~f:(fun (env, args, args_ty) ((loc, name), ty) ->
           match ty with
           | None ->
-            Type_error.raise (Error_missing_type_annotation (E_var name))
+            Type_error.raise
+              (Error_missing_type_annotation { expr = (loc, E_var name) })
           | Some ty ->
             let ty =
               instantiate ~env ~lvl:ctx.lvl
@@ -313,7 +318,7 @@ and synth' ~ctx expr =
                 ([], ty)
             in
             ( Env.add_val env name ([], ty),
-              (name, Some ty) :: args,
+              ((loc, name), Some ty) :: args,
               ty :: args_ty ))
     in
     let body_ty, body = synth ~ctx:{ ctx with env } body in
@@ -323,8 +328,8 @@ and synth' ~ctx expr =
       List.filter vs ~f:Var.is_empty
     in
     ( Ty_arr (List.rev args_ty, body_ty),
-      E_abs (List.rev vs, List.rev args, body) )
-  | E_app (f, args) ->
+      (loc, E_abs (List.rev vs, List.rev args, body)) )
+  | loc, E_app (f, args) ->
     (* S-App-InfAlg *)
     let (args_tys, body_ty), f =
       match synth ~ctx f with
@@ -332,7 +337,8 @@ and synth' ~ctx expr =
       | Ty_var v, f ->
         assert (Var.is_empty v);
         (fresh_fun_ty v ~arity:(List.length args), f)
-      | ty, _ -> Type_error.raise (Error_expected_a_function ty)
+      | ty, _ ->
+        Type_error.raise (Error_expected_a_function { loc = Expr.loc f; ty })
     in
     let constraints = Subtyping.Constraint_set.empty () in
     let args =
@@ -342,16 +348,16 @@ and synth' ~ctx expr =
               ~ctx:{ ctx with variance = Variance.inv ctx.variance }
               ~constraints arg ty)
       with
-      | Unequal_lengths -> Type_error.raise Error_arity_mismatch
+      | Unequal_lengths -> Type_error.raise (Error_arity_mismatch { loc })
       | Ok args -> args
     in
     Subtyping.Constraint_set.solve constraints;
     let expr = E_app (f, args) in
     if Debug.log_solve then
       Caml.Format.printf "== SOLVED %s@."
-        (Expr.show (E_ann (expr, ([], body_ty))));
-    (body_ty, E_app (f, args))
-  | E_record fields ->
+        (Expr.show (loc, E_ann ((loc, expr), ([], body_ty))));
+    (body_ty, (loc, E_app (f, args)))
+  | loc, E_record fields ->
     let row, fields =
       (* List.fold fields ~init:(Ty_row_empty, []) *)
       List.fold_right fields ~init:(Ty_row_empty, [])
@@ -359,16 +365,16 @@ and synth' ~ctx expr =
           let ty, expr = synth ~ctx expr in
           (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
     in
-    (Ty_record row, E_record fields)
-  | E_record_project (expr, name) ->
+    (Ty_record row, (loc, E_record fields))
+  | loc, E_record_project (expr, name) ->
     let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
     let ty = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
     let record_ty = Ty_record (Ty_row_extend ((name, ty), row)) in
     let constraints = Subtyping.Constraint_set.empty () in
     let expr = check' ~ctx ~constraints expr record_ty in
     Subtyping.Constraint_set.solve constraints;
-    (ty, E_record_project (expr, name))
-  | E_record_extend (expr, fields) ->
+    (ty, (loc, E_record_project (expr, name)))
+  | loc, E_record_extend (expr, fields) ->
     let constraints = Subtyping.Constraint_set.empty () in
     let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
     let expr = check' ~ctx ~constraints expr (Ty_record row) in
@@ -379,23 +385,23 @@ and synth' ~ctx expr =
     in
     let ty = Ty_record row in
     Subtyping.Constraint_set.solve constraints;
-    (ty, E_record_extend (expr, List.rev fields))
-  | E_record_update (expr, fields) ->
+    (ty, (loc, E_record_extend (expr, List.rev fields)))
+  | loc, E_record_update (expr, fields) ->
     let constraints = Subtyping.Constraint_set.empty () in
-    let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
     let row, fields =
+      let row = Ty.var @@ Var.fresh ~lvl:ctx.lvl () in
       List.fold fields ~init:(row, []) ~f:(fun (row, fields) (name, expr) ->
           let ty, expr = synth ~ctx expr in
           (Ty_row_extend ((name, ty), row), (name, expr) :: fields))
     in
     let ty = Ty_record row in
     let ty', expr = synth ~ctx expr in
-    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty';
+    subsumes ~lvl:ctx.lvl constraints ~sub:(loc, ty) ~super:(Expr.loc expr, ty');
     Subtyping.Constraint_set.solve constraints;
-    (ty, E_record_update (expr, List.rev fields))
-  | E_lit (Lit_string _) -> (Ty_const "string", expr)
-  | E_lit (Lit_int _) -> (Ty_const "int", expr)
-  | E_let ((name, expr, e_ty_sch), body) ->
+    (ty, (loc, E_record_update (expr, List.rev fields)))
+  | _, E_lit (Lit_string _) -> (Ty_const "string", expr)
+  | _, E_lit (Lit_int _) -> (Ty_const "int", expr)
+  | loc, E_let ((name, expr, e_ty_sch), body) ->
     let e_ty, expr =
       match e_ty_sch with
       | None -> synth ~ctx:{ ctx with lvl = ctx.lvl + 1 } expr
@@ -409,7 +415,7 @@ and synth' ~ctx expr =
     let e_ty_sch = generalize ~lvl:ctx.lvl e_ty in
     let env = Env.add_val ctx.env name e_ty_sch in
     let body_ty, body = synth ~ctx:{ ctx with env } body in
-    (body_ty, E_let ((name, expr, Some e_ty_sch), body))
+    (body_ty, (loc, E_let ((name, expr, Some e_ty_sch), body)))
 
 and check' ~ctx ~constraints expr ty =
   if Debug.log_check then
@@ -417,7 +423,7 @@ and check' ~ctx ~constraints expr ty =
       (Variance.show ctx.variance)
       (Expr.show expr) (Ty.show ty);
   match expr with
-  | E_abs (vs, args, body) ->
+  | loc, E_abs (vs, args, body) ->
     let env, vs =
       List.fold vs ~init:(ctx.env, []) ~f:(fun (env, vs) v ->
           let v = Var.refresh ~lvl:ctx.lvl v in
@@ -429,46 +435,52 @@ and check' ~ctx ~constraints expr ty =
       | Ty_var v ->
         assert (Var.is_empty v);
         fresh_fun_ty v ~arity:(List.length args)
-      | ty -> Type_error.raise (Error_expected_a_function ty)
+      | ty -> Type_error.raise (Error_expected_a_function { loc; ty })
     in
     let env, args =
       match
         List.fold2 args args_ty ~init:(env, [])
-          ~f:(fun (env, args) (name, ty') ty ->
+          ~f:(fun (env, args) ((loc, name), ty') ty ->
             Option.iter ty' ~f:(fun ty' ->
-                subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty');
+                subsumes ~lvl:ctx.lvl constraints ~sub:(Location.none, ty)
+                  ~super:(loc, ty'));
             let env = Env.add_val env name ([], ty) in
-            (env, (name, Some ty) :: args))
+            (env, ((loc, name), Some ty) :: args))
       with
-      | Unequal_lengths -> Type_error.raise Error_arity_mismatch
+      | Unequal_lengths -> Type_error.raise (Error_arity_mismatch { loc })
       | Ok (env, args) -> (env, List.rev args)
     in
     let body = check' ~ctx:{ ctx with env } ~constraints body body_ty in
-    E_abs (List.rev vs, args, body)
-  | E_app (f, args) ->
+    (loc, E_abs (List.rev vs, args, body))
+  | loc, E_app (f, args) ->
     let f_ty, f = synth ~ctx f in
-    let args_tys, args = args |> List.map ~f:(synth ~ctx) |> List.unzip in
+    let args = args |> List.map ~f:(synth ~ctx) in
     let args_tys', ty' =
       match resolve_ty f_ty with
       | Ty_arr (args_tys', ty') -> (args_tys', ty')
       | Ty_var v ->
         assert (Var.is_empty v);
         fresh_fun_ty v ~arity:(List.length args)
-      | ty -> Type_error.raise (Error_expected_a_function ty)
+      | ty ->
+        Type_error.raise (Error_expected_a_function { loc = Expr.loc f; ty })
     in
     let () =
       match
-        List.iter2 args_tys' args_tys ~f:(fun ty' ty ->
-            subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty ~super_ty:ty')
+        List.iter2 args_tys' args ~f:(fun ty' (ty, expr) ->
+            subsumes ~lvl:ctx.lvl constraints
+              ~sub:(Expr.loc expr, ty)
+              ~super:(Location.none, ty'))
       with
-      | Unequal_lengths -> Type_error.raise Error_arity_mismatch
+      | Unequal_lengths -> Type_error.raise (Error_arity_mismatch { loc })
       | Ok () -> ()
     in
-    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty' ~super_ty:ty;
-    E_app (f, args)
+    subsumes ~lvl:ctx.lvl constraints ~sub:(loc, ty') ~super:(Location.none, ty);
+    (loc, E_app (f, List.map args ~f:snd))
   | expr ->
     let ty', expr = synth ~ctx expr in
-    subsumes ~lvl:ctx.lvl constraints ~sub_ty:ty' ~super_ty:ty;
+    subsumes ~lvl:ctx.lvl constraints
+      ~sub:(Expr.loc expr, ty')
+      ~super:(Location.none, ty);
     expr
 
 and check ~ctx expr ty =
@@ -484,7 +496,9 @@ let infer ~env expr : (expr, Type_error.t) Result.t =
       (let ty, expr = synth ~ctx expr in
        let ty = generalize ~lvl:0 ty in
        match expr with
-       | E_let ((name, _, _), E_var name') when String.equal name name' -> expr
-       | expr -> E_ann (expr, ty))
+       | _, E_let ((name, _, _), (_, E_var name')) when String.equal name name'
+         ->
+         expr
+       | loc, expr -> (loc, E_ann ((loc, expr), ty)))
   with
   | Type_error.Type_error err -> Error err

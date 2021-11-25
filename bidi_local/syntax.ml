@@ -11,9 +11,10 @@ let ty_brackets doc = Layout.(punct (string "[") ^^ doc ^^ punct (string "]"))
 
 let f_parens doc = Layout.(punct (string "(") ^^ doc ^^ punct (string ")"))
 
-let rec layout_expr' expr : Layout.layout =
+let rec layout_expr' (loc, expr) : Layout.layout =
   let open Layout in
-  let is_simple_expr = function
+  let is_simple_expr (_, expr) =
+    match expr with
     | E_var _
     | E_app _
     | E_record _ ->
@@ -40,16 +41,16 @@ let rec layout_expr' expr : Layout.layout =
     let newline =
       (* Always break on let inside the body. *)
       match body with
-      | E_let _ -> hardline
+      | _, E_let _ -> hardline
       | _ -> break 1
     in
     let* args =
       match args with
-      | [ (name, None) ] -> return (string name)
+      | [ ((_loc, name), None) ] -> return (string name)
       | args ->
         let layout_arg = function
-          | name, None -> return (string name)
-          | name, Some ty ->
+          | (_loc, name), None -> return (string name)
+          | (_loc, name), Some ty ->
             let* ty = layout_ty' ty in
             return (string name ^^ punct (string ": ") ^^ ty)
         in
@@ -78,7 +79,7 @@ let rec layout_expr' expr : Layout.layout =
          therefore we linearize them first and print on the same indent instead. *)
       let rec linearize es e =
         match e with
-        | E_let (_, b) -> linearize (e :: es) b
+        | E_let (_, (_, b)) -> linearize (e :: es) b
         | e -> e :: es
       in
       List.rev (linearize [] e)
@@ -110,8 +111,8 @@ let rec layout_expr' expr : Layout.layout =
             (* If there's [let x = let y = ... in ... in ...] then we want to
                force break. *)
             match expr with
-            | E_let _ -> (hardline, 2)
-            | E_record _ -> (space, 0)
+            | _, E_let _ -> (hardline, 2)
+            | _, E_record _ -> (space, 0)
             | _ -> (break 1, 2)
           in
           let* expr = layout_expr' expr in
@@ -126,7 +127,7 @@ let rec layout_expr' expr : Layout.layout =
                ^^ expr_newline
                ^^ kw (string "in"))
             ^^ newline)
-        | e -> layout_expr' e)
+        | e -> layout_expr' (loc, e))
     in
     concat items
   | E_record fields ->
@@ -306,6 +307,8 @@ and layout_variance' v =
 
 module Expr = struct
   type t = expr
+
+  let loc (loc, _) = loc
 
   let layout = layout_expr'
 
