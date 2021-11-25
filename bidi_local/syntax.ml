@@ -220,7 +220,9 @@ and layout_ty' ty =
     | Ty_record ty_row ->
       let+ ty_row = layout_ty_row ty_row in
       group (record_braces (nest 2 (break 0 ^^ ty_row) ^^ break 0))
-    | (Ty_row_empty | Ty_row_extend _) as ty -> layout_ty_row ty
+    | (Ty_row_empty | Ty_row_extend _) as ty ->
+      let+ doc = layout_ty_row ty in
+      group doc
     | Ty_bot -> return (string "⊥")
     | Ty_top -> return (string "⊤")
   and layout_ty_row = function

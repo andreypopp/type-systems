@@ -213,7 +213,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "x";
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 0-1:
        1 | x
            ^
@@ -223,7 +224,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "let x = x in x";
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 8-9:
        1 | let x = x in x
                    ^
@@ -317,7 +319,8 @@ let%expect_test "" =
     let id : b . b -> b = fun y -> true in
     choose_curry(f)(id)
     |};
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 100-102:
        -1 | ....................................
         0 | ..........................................
@@ -450,7 +453,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "plus(one, true)";
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 10-14:
        1 | plus(one, true)
                      ^^^^
@@ -460,7 +464,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "plus(one)";
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 0-9:
        1 | plus(one)
            ^^^^^^^^^
@@ -559,7 +564,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "one(id)";
-  [%expect {|
+  [%expect
+    {|
        Line 1, characters 0-3:
        1 | one(id)
            ^^^
@@ -750,7 +756,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "({}).x";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 1-3:
     1 | ({}).x
          ^^
@@ -861,7 +868,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "{ {x = one } with x := true }";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 0-29:
     1 | { {x = one } with x := true }
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -871,7 +879,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "let a = {} in {a with b := one}";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 14-31:
     1 | let a = {} in {a with b := one}
                       ^^^^^^^^^^^^^^^^^
@@ -890,7 +899,8 @@ let%expect_test "" =
 
 let%expect_test "" =
   infer ~env "let a = {x = one} in ({a with x := true}).x";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 22-40:
     1 | let a = {x = one} in ({a with x := true}).x
                               ^^^^^^^^^^^^^^^^^^
@@ -939,7 +949,8 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env
     "let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in addx({})";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 67-69:
     1 | let addx = fun[r, x](r: {x: x, ...r}) -> {r with x := one} in addx({})
                                                                            ^^
@@ -1090,9 +1101,9 @@ let%expect_test "" =
     |};
   [%expect
     {|
-    (fun[r] (r: {...r}) ->
-       choose({r with x = zero}, {r with y = one})
-     : r . {...r} -> ⊤)
+    File "_none_", line 1:
+    Error: recursive record type
+
     | |}]
 
 let%expect_test "" =
@@ -1201,10 +1212,24 @@ let%expect_test "" =
 let%expect_test "" =
   infer ~env
     "fun[r](r: {...r}) -> choose({r with x := zero}, {r with x := true})";
-  [%expect {|
+  [%expect
+    {|
     Line 1, characters 48-66:
     1 | fun[r](r: {...r}) -> choose({r with x := zero}, {r with x := true})
                                                         ^^^^^^^^^^^^^^^^^^
     Error: type {x: bool, ..._6} is not a subtype of {x: int, ..._4}
 
+    | |}]
+
+let%expect_test "" =
+  infer ~env "choose({x=one},{x=one}).x";
+  [%expect {|
+    (choose({x = one}, {x = one}).x : int)
+    | |}]
+
+let%expect_test "" =
+  infer ~env "choose({x=one,y=null},{y=one,x=one}).y";
+  [%expect
+    {|
+    (choose({x = one, y = null}, {y = one, x = one}).y : int?)
     | |}]

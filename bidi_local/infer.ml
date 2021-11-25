@@ -143,7 +143,6 @@ and demote ~lvl (ty : ty) =
 let subsumes ~lvl constraints ~sub:(sub_loc, sub_ty) ~super:(super_loc, super_ty)
     =
   let exception Subsumption_failed of { sub_ty : ty; super_ty : ty } in
-  let exception Row_rewrite_error in
   let rec aux ~sub_ty ~super_ty =
     if Debug.log_solve then
       Caml.Format.printf "??? %s <: %s@." (Ty.show sub_ty) (Ty.show super_ty);
@@ -174,8 +173,13 @@ let subsumes ~lvl constraints ~sub:(sub_loc, sub_ty) ~super:(super_loc, super_ty
         | Ok () -> ());
         aux ~sub_ty:sub_ty' ~super_ty:super_ty'
       | Ty_record sub_row, Ty_record super_row -> (
-        try aux_row ~sub_row ~super_row with
-        | Row_rewrite_error -> raise (Subsumption_failed { sub_ty; super_ty }))
+        try
+          Subtyping.unify_rows
+            (fun sub_ty super_ty -> aux ~sub_ty ~super_ty)
+            sub_row super_row
+        with
+        | Subtyping.Unification_error ->
+          raise (Subsumption_failed { sub_ty; super_ty }))
       | Ty_var sub_v, Ty_var super_v -> (
         match (Var.ty sub_v, Var.ty super_v) with
         | None, None -> Subtyping.union_vars sub_v super_v
@@ -200,56 +204,13 @@ let subsumes ~lvl constraints ~sub:(sub_loc, sub_ty) ~super:(super_loc, super_ty
             (promote ~lvl sub_ty, Ty_top))
       | _, Ty_top -> ()
       | Ty_bot, _ -> ()
+      | Ty_row_empty, _
+      | _, Ty_row_empty ->
+        assert false
+      | Ty_row_extend _, _
+      | _, Ty_row_extend _ ->
+        assert false
       | _ -> raise (Subsumption_failed { sub_ty; super_ty })
-  and aux_row ~sub_row ~super_row =
-    match (sub_row, super_row) with
-    | Ty_row_empty, Ty_row_extend _ -> raise Row_rewrite_error
-    | Ty_row_extend ((name, sub_ty), sub_row), Ty_row_extend _ ->
-      let rec rewrite = function
-        | Ty_row_empty -> raise Row_rewrite_error
-        | Ty_row_extend ((name', super_ty), super_row) ->
-          if String.(name = name') then (
-            aux ~sub_ty ~super_ty;
-            super_row)
-          else Ty_row_extend ((name', super_ty), rewrite super_row)
-        | Ty_var v -> (
-          match Var.ty v with
-          | Some super_row -> rewrite super_row
-          | None ->
-            let super_row' = Ty.var @@ Var.fresh ~lvl:(Var.lvl v) () in
-            Var.set_ty v (Ty_row_extend ((name, sub_ty), super_row'));
-            super_row')
-        | _ -> assert false
-      in
-      let subrow_unbound =
-        match sub_row with
-        | Ty_var v -> if Var.is_empty v then Some v else None
-        | _ -> None
-      in
-      let super_row = rewrite super_row in
-      (match subrow_unbound with
-      | Some v ->
-        if not (Var.is_empty v) then
-          Type_error.raise Error_recursive_record_type
-      | _ -> ());
-      aux_row ~sub_row ~super_row
-    | Ty_var sub_v, Ty_row_extend ((name, super_ty), super_row) -> (
-      match Var.ty sub_v with
-      | Some sub_ty -> aux ~super_ty ~sub_ty
-      | None ->
-        let sub_row = Ty.var @@ Var.fresh ~lvl:(Var.lvl sub_v) () in
-        let sub_ty = Ty_row_extend ((name, super_ty), sub_row) in
-        Var.set_ty sub_v sub_ty;
-        aux_row ~sub_row ~super_row)
-    | Ty_row_extend ((name, sub_ty), sub_row), Ty_var super_v -> (
-      match Var.ty super_v with
-      | Some super_ty -> aux ~super_ty ~sub_ty
-      | None ->
-        let super_row = Ty.var @@ Var.fresh ~lvl:(Var.lvl super_v) () in
-        let super_ty = Ty_row_extend ((name, sub_ty), sub_row) in
-        Var.set_ty super_v super_ty;
-        aux_row ~sub_row ~super_row)
-    | sub_row, super_row -> aux ~sub_ty:sub_row ~super_ty:super_row
   in
   try aux ~sub_ty ~super_ty with
   | Subsumption_failed _ ->
