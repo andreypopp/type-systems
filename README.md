@@ -28,6 +28,20 @@
   Type inference and elaborator are implemented but the environment construction
   doesn't check for overlapping instances yet.
 
+- `bidi_local` attempts to implement ["Local Type Inference"][bidi_local] by
+  Piece and Turner.
+
+  This is a bidirectional type checking mechanism where we alternate between
+  checking mode (where we have type annotations available) and synthesis mode.
+
+  Thus this requires type annotations for let-functions declarations.
+
+  The type system supports subtyping (with `null`). The way it works is it
+  collects lower/upper bound constraints for type variables and then synthesises
+  the most general type for type variables at polymorphic abstraction
+  elimination.
+
+
 # Development
 
 ```
@@ -50,3 +64,4 @@ make test
 [inferno]: https://gitlab.inria.fr/fpottier/inferno/
 [THIH]: https://web.cecs.pdx.edu/~mpj/thih/thih.pdf
 [tomprimozic/type-systems]: https://github.com/tomprimozic/type-systems
+[bidi_local]: https://www.cis.upenn.edu/~bcpierce/papers/lti-toplas.pdf
