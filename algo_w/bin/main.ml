@@ -85,7 +85,7 @@ let () =
   in
   let prog = Algo_w.Expr_parser.parse_chan Stdio.stdin in
   match Algo_w.infer_ty ~env prog with
-  | Ok qty -> Caml.Format.printf ": %s@." (Algo_w.Expr.show_qual_ty qty)
+  | Ok qty -> Stdlib.Format.printf ": %s@." (Algo_w.Expr.show_qual_ty qty)
   | Error err ->
-    Caml.Format.printf "ERROR: %s@." (Algo_w.Infer.show_error err);
-    Caml.exit 1
+    Stdlib.Format.printf "ERROR: %s@." (Algo_w.Infer.show_error err);
+    Stdlib.exit 1

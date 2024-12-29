@@ -47,10 +47,10 @@ let env =
 let infer ?(env = env) code =
   Algo_w.Infer.reset_vars ();
   let prog = Algo_w.parse_expr code in
-  Caml.Format.printf "%s@." (Algo_w.Expr.show_expr prog);
+  Stdlib.Format.printf "%s@." (Algo_w.Expr.show_expr prog);
   match Algo_w.infer_ty ~env prog with
-  | Ok qty -> Caml.Format.printf ": %s@.|" (Algo_w.Expr.show_qual_ty qty)
-  | Error err -> Caml.Format.printf "ERROR: %s@.|" (Algo_w.Infer.show_error err)
+  | Ok qty -> Stdlib.Format.printf ": %s@.|" (Algo_w.Expr.show_qual_ty qty)
+  | Error err -> Stdlib.Format.printf "ERROR: %s@.|" (Algo_w.Infer.show_error err)
 
 let%expect_test "" =
   infer "world";

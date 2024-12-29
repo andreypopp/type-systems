@@ -257,7 +257,7 @@ let show' ?(width = 80) doc v =
   PPrint.ToBuffer.pretty 1. width buf (doc v);
   Buffer.contents buf
 
-let print' doc v = Caml.print_endline (show' doc v)
+let print' doc v = Stdlib.print_endline (show' doc v)
 
 let pp_expr = pp' layout_expr
 
